@@ -62,11 +62,11 @@ class GenerateWindow(QObject):
         gs.callbackBusy = False
 
         gs.album = getLatestGeneratedImagesFromPath()
-        self.w.thumbnails = Thumbnails()
+
 
         self.home()
 
-        self.w.thumbnails.thumbs.installEventFilter(self)
+        #self.w.thumbnails.thumbs.installEventFilter(self)
         self.w.statusBar().showMessage('Ready')
         self.w.progressBar = QProgressBar()
 
@@ -114,6 +114,7 @@ class GenerateWindow(QObject):
 
 
     def home(self):
+        self.w.thumbnails = Thumbnails()
         #self.mainPainter = QPainter()
         #self.w.initPainter(self.mainPainter)
         #self.mainPainter.begin()
@@ -128,6 +129,7 @@ class GenerateWindow(QObject):
         self.w.dynaimage = Dynaimage()
         self.timeline = Timeline()
         self.animDials = AnimDials()
+        self.animKeys = AnimKeys()
 
         #app2  = qapp(sys.argv)
         #self.nodes = NodeEditorWindow()
@@ -152,22 +154,34 @@ class GenerateWindow(QObject):
         self.w.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.timeline)
         self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.w.thumbnails)
         self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.animDials.w.dockWidget)
+        self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.animKeys.w.dockWidget)
 
         self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.dynaview.w.dockWidget)
         self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.dynaimage.w.dockWidget)
 
         self.w.dynaview.w.setMinimumSize(QtCore.QSize(512, 512))
-        self.w.tabifyDockWidget(self.w.thumbnails, self.w.sampler.w.dockWidget)
-        self.w.tabifyDockWidget(self.w.dynaimage.w.dockWidget, self.w.dynaview.w.dockWidget)
+        #self.w.tabifyDockWidget(self.w.thumbnails, self.w.sampler.w.dockWidget)
 
         self.w.tabifyDockWidget( self.w.sizer_count.w.dockWidget, self.animDials.w.dockWidget)
+        self.w.tabifyDockWidget(self.animDials.w.dockWidget, self.w.sampler.w.dockWidget)
+        self.w.tabifyDockWidget(self.w.sampler.w.dockWidget, self.animKeys.w.dockWidget)
+
+        self.w.tabifyDockWidget(self.w.thumbnails, self.w.dynaimage.w.dockWidget)
+
+        self.w.tabifyDockWidget(self.timeline, self.w.prompt.w.dockWidget)
+
+        self.w.dynaview.w.dockWidget.setMinimumSize(512, 0)
 
 
+
+
+
+        self.animKeys.w.dockWidget.setWindowTitle('Anim Keys')
         self.w.thumbnails.setWindowTitle('Thumbnails')
         self.w.sampler.w.dockWidget.setWindowTitle('Sampler')
         self.w.sizer_count.w.dockWidget.setWindowTitle('Sliders')
         self.animDials.w.dockWidget.setWindowTitle('Dials')
-
+        self.timeline.setWindowTitle('Timeline')
         self.w.prompt.w.dockWidget.setWindowTitle('Prompt')
         self.w.dynaview.w.dockWidget.setWindowTitle('Tensor Preview')
         self.w.dynaimage.w.dockWidget.setWindowTitle('Image Preview')
@@ -181,7 +195,7 @@ class GenerateWindow(QObject):
         self.w.thumbnails.thumbsZoom.valueChanged.connect(self.updateThumbsZoom)
         self.w.thumbnails.refresh.clicked.connect(self.load_history)
         self.w.imageItem = QGraphicsPixmapItem()
-        self.w.imageItem.pixmap().fill(Qt.white)
+        #self.w.imageItem.pixmap().fill(Qt.white)
         self.newPixmap = {}
         self.tpixmap = {}
         self.updateRate = self.w.sizer_count.w.stepsSlider.value()
@@ -189,12 +203,8 @@ class GenerateWindow(QObject):
         self.vpainter["iins"] = QPainter()
         self.tpixmap = QPixmap(512, 512)
         self.ipixmap = QPixmap(512, 512)
-
-        self.livePainter.begin(self.tpixmap)
-
-
         self.livePainter.end()
-
+        self.vpainter["iins"].end()
     def deforumCallback(self, *args, **kwargs):
         saved_args = locals()
         #print("saved_args is", saved_args)

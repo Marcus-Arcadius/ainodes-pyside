@@ -18,6 +18,17 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
 
 import concurrent.futures
 
+class AnimKeys(QObject):
+
+    def __init__(self, *args, **kwargs):
+        loader = QtUiTools.QUiLoader()
+        file = QFile("frontend/ui_widgets/animKeys.ui")
+        file.open(QFile.ReadOnly)
+        self.w = loader.load(file)
+        file.close()
+        #super().__init__(*args, **kwargs)
+        #uic.loadUi("frontend/ui_widgets/sizer_count.ui", self)
+
 
 class AnimDials(QObject):
 
@@ -468,7 +479,7 @@ class OurTimeline(QWidget):
             point += 10
 
         if self.pos is not None and self.is_in:
-            qp.drawLine(self.pos.x(), 0, self.pos.x(), 40)
+            qp.drawLine(self.pos, 0, self.pos, 40)
 
         if self.pointerPos is not None:
             line = QLine(QPoint(self.pointerTimePos/self.getScale(), 40),
@@ -539,13 +550,13 @@ class OurTimeline(QWidget):
 
 
 
-        self.pos = e.globalPosition()
-        self.checkEdges(e.globalPosition().x())
+        self.pos = e.pos().x()
+        self.checkEdges(self.pos)
         #print(f'mouseMove func: {self.edgeGrab}')
         # if mouse is being pressed, update pointer
         if self.clicking:
             self.oldPos = self.pointerPos
-            x = self.pos.x()
+            x = self.pos
 
 
             self.pointerPos = x
@@ -570,11 +581,11 @@ class OurTimeline(QWidget):
                     #print(f'sample.startPos:{sample.startPos}')
                     #print(f'x:{x}')
 
-                    print(f'END OF DEBUG BLOCK')
+                    #print(f'END OF DEBUG BLOCK')
 
                     change = (x - self.oldPos)
                     change = (change * self.scale)
-                    print(change)
+                    #print(change)
                     sample.startPos = sample.startPos + change
                     sample.endPos = sample.endPos + change
 

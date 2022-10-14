@@ -12,7 +12,8 @@ if (os.name == 'nt'):
     myappid = 'aiNodes' # arbitrary string
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
-from PySide6.QtCore import QCoreApplication, Qt
+from PySide2.QtCore import QCoreApplication, Qt
+
 QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
 app = QApplication(sys.argv)
 from frontend.mainwindow import *
