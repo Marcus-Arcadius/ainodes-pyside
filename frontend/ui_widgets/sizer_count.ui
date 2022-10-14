@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>184</width>
-    <height>382</height>
+    <width>243</width>
+    <height>427</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -317,7 +317,7 @@
          <item row="28" column="0">
           <widget class="QSlider" name="previewSlider">
            <property name="minimum">
-            <number>3</number>
+            <number>0</number>
            </property>
            <property name="maximum">
             <number>25</number>
