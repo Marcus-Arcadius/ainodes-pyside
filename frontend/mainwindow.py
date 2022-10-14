@@ -1,4 +1,5 @@
 import pandas as pd
+from PySide6.examples.webenginewidgets.markdowneditor.ui_mainwindow import Ui_MainWindow
 
 import backend.settings as settings
 from backend.singleton import singleton
@@ -36,6 +37,11 @@ from PySide6.QtCore import *
 
 
 
+class Callbacks(QObject):
+    txt2img_step = Signal()
+    txt2img_finished = Signal()
+    deforum_step = Signal()
+    deforum_finished = Signal()
 
 class GenerateWindow(QObject):
     loader = QtUiTools.QUiLoader()
@@ -45,6 +51,7 @@ class GenerateWindow(QObject):
     file.close()
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.signals = Callbacks()
 
         settings.load_settings_json()
 
@@ -204,11 +211,8 @@ class GenerateWindow(QObject):
         self.ipixmap = QPixmap(512, 512)
         self.livePainter.end()
         self.vpainter["iins"].end()
-    def deforumCallback(self, *args, **kwargs):
-        saved_args = locals()
-        #print("saved_args is", saved_args)
+
     def updateThumbsZoom(self):
-        #with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         while gs.callbackBusy == True:
             time.sleep(0.1)
         try:
@@ -247,110 +251,63 @@ class GenerateWindow(QObject):
         for image in gs.album:
             self.w.thumbnails.thumbs.addItem(QListWidgetItem(QIcon(image), str(image)))
     def viewThread(self, item):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            self.viewImageClicked(item)
+        self.viewImageClicked(item)
         #worker = Worker(self.viewImageClicked(item))
         #threadpool.start(worker)
     def tileImageClicked(self, item):
-        try:
-            while gs.callbackBusy == True:
-                time.sleep(0.1)
-            #gs.callbackBusy = True
-            vins = random.randint(10000, 99999)
-            imageSize = item.icon().actualSize(QSize(10000, 10000))
-            qimage = QImage(item.icon().pixmap(imageSize).toImage())
-            self.newPixmap[vins] = QPixmap(QSize(2048, 2048))
 
-            self.vpainter[vins] = QPainter(self.newPixmap[vins])
+        vins = random.randint(10000, 99999)
+        imageSize = item.icon().actualSize(QSize(10000, 10000))
+        qimage = QImage(item.icon().pixmap(imageSize).toImage())
+        self.newPixmap[vins] = QPixmap(QSize(2048, 2048))
 
-            newItem = QGraphicsPixmapItem()
-            #vpixmap = self.w.imageItem.pixmap()
+        self.vpainter[vins] = QPainter(self.newPixmap[vins])
+
+        newItem = QGraphicsPixmapItem()
+        #vpixmap = self.w.imageItem.pixmap()
 
 
-            #self.vpainter[vins].device()
-            self.vpainter[vins].beginNativePainting()
+        #self.vpainter[vins].device()
+        self.vpainter[vins].beginNativePainting()
 
 
-            self.vpainter[vins].drawImage(QRect(QPoint(0, 0), QSize(qimage.size())), qimage)
-            self.vpainter[vins].drawImage(QRect(QPoint(512, 0), QSize(qimage.size())), qimage)
-            self.vpainter[vins].drawImage(QRect(QPoint(0, 512), QSize(qimage.size())), qimage)
-            self.vpainter[vins].drawImage(QRect(QPoint(512, 512), QSize(qimage.size())), qimage)
+        self.vpainter[vins].drawImage(QRect(QPoint(0, 0), QSize(qimage.size())), qimage)
+        self.vpainter[vins].drawImage(QRect(QPoint(512, 0), QSize(qimage.size())), qimage)
+        self.vpainter[vins].drawImage(QRect(QPoint(0, 512), QSize(qimage.size())), qimage)
+        self.vpainter[vins].drawImage(QRect(QPoint(512, 512), QSize(qimage.size())), qimage)
 
-            newItem.setPixmap(self.newPixmap[vins])
+        newItem.setPixmap(self.newPixmap[vins])
 
-            #self.w.imageItem.setPixmap(vpixmap)
-            #self.w.preview.w.graphicsView.modified = True
-            for items in self.w.preview.w.scene.items():
-                self.w.preview.w.scene.removeItem(items)
-            self.w.preview.w.scene.addItem(newItem)
-            self.w.preview.w.graphicsView.fitInView(newItem, Qt.AspectRatioMode.KeepAspectRatio)
-            self.w.preview.w.graphicsView.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-            self.vpainter[vins].endNativePainting()
-            #gs.callbackBusy = False
-        except Exception as e:
-            print(f"Exception: {e}")
-            pass
+        #self.w.imageItem.setPixmap(vpixmap)
+        #self.w.preview.w.graphicsView.modified = True
+        for items in self.w.preview.w.scene.items():
+            self.w.preview.w.scene.removeItem(items)
+        self.w.preview.w.scene.addItem(newItem)
+        self.w.preview.w.graphicsView.fitInView(newItem, Qt.AspectRatioMode.KeepAspectRatio)
+        self.w.preview.w.graphicsView.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.vpainter[vins].endNativePainting()
+        #gs.callbackBusy = False
     def viewImageClicked(self, item):
-        try:
-            while gs.callbackBusy == True:
-                time.sleep(0.1)
-            #gs.callbackBusy = True
-            vins = random.randint(10000, 99999)
-            imageSize = item.icon().actualSize(QSize(10000, 10000))
-            qimage = QImage(item.icon().pixmap(imageSize).toImage())
-            self.newPixmap[vins] = QPixmap(qimage.size())
 
-            self.vpainter[vins] = QPainter(self.newPixmap[vins])
+        vins = random.randint(10000, 99999)
+        imageSize = item.icon().actualSize(QSize(10000, 10000))
+        qimage = QImage(item.icon().pixmap(imageSize).toImage())
+        self.newPixmap[vins] = QPixmap(qimage.size())
+        self.vpainter[vins] = QPainter(self.newPixmap[vins])
+        newItem = QGraphicsPixmapItem()
+        self.vpainter[vins].begin()
+        self.vpainter[vins].drawImage(QRect(QPoint(0, 0), QSize(qimage.size())), qimage)
+        newItem.setPixmap(self.newPixmap[vins])
 
-            newItem = QGraphicsPixmapItem()
-            #vpixmap = self.w.imageItem.pixmap()
+        #self.w.imageItem.setPixmap(vpixmap)
+        #self.w.preview.w.graphicsView.modified = True
+        for items in self.w.preview.w.scene.items():
+            self.w.preview.w.scene.removeItem(items)
+        self.w.preview.w.scene.addItem(newItem)
+        self.w.preview.w.graphicsView.fitInView(newItem, Qt.AspectRatioMode.KeepAspectRatio)
+        self.w.preview.w.graphicsView.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.vpainter[vins].end()
 
-
-            #self.vpainter[vins].device()
-            self.vpainter[vins].beginNativePainting()
-
-
-            self.vpainter[vins].drawImage(QRect(QPoint(0, 0), QSize(qimage.size())), qimage)
-            newItem.setPixmap(self.newPixmap[vins])
-
-            #self.w.imageItem.setPixmap(vpixmap)
-            #self.w.preview.w.graphicsView.modified = True
-            for items in self.w.preview.w.scene.items():
-                self.w.preview.w.scene.removeItem(items)
-            self.w.preview.w.scene.addItem(newItem)
-            self.w.preview.w.graphicsView.fitInView(newItem, Qt.AspectRatioMode.KeepAspectRatio)
-            self.w.preview.w.graphicsView.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-            self.vpainter[vins].endNativePainting()
-            #gs.callbackBusy = False
-        except Exception as e:
-            print(f"Exception: {e}")
-            pass
-        #self.w.preview.w.scene.update()
-        #self.w.preview.w.graphicsView.setScene(self.w.preview.w.scene)
-
-        #rad = self.w.preview.w.graphicsView.penwidth / 2 + 2
-        #self.w.preview.w.graphicsView.update(QRect(self.lastPoint, position).normalized().adjusted(-rad, -rad, +rad, +rad))
-        #self.w.preview.w.graphicsView.lastPoint = position
-
-
-
-
-
-
-
-        #for item in self.w.preview.w.scene.items():
-        #    self.w.preview.w.scene.removeItem(item)
-
-
-        #self.w.preview.w.scene.clear()
-        #imageSize = item.icon().actualSize(QSize(512, 512))
-        #print(f'image item type: {type(self.w.imageItem)}')
-        #self.w.imageItem.setPixmap(item.icon().pixmap(imageSize))
-
-        #self.w.preview.w.scene.addItem(imageItem)
-        #self.w.preview.w.scene.setPixmap(self.w.imageItem)
-
-        #self.w.preview.w.scene.update()
     def taskSwitcher(self):
         choice = self.w.sampler.w.comboBox_4.currentText()
         if choice == "Text to Video":
@@ -434,37 +391,53 @@ class GenerateWindow(QObject):
                                         midas_weight = midas_weight,
                                         near_plane = near_plane,
                                         far_plane = far_plane,
-                                        image_callback=self.image_cb,
+                                        image_callback=self.imageCallback_signal,
                                         animation_prompts=prompt_series,
                                         use_init = use_init,
                                         clear_latent = clearLatent,
                                         clear_sample = clearSample,
-                                        step_callback = self.deforum_step_cb,
+                                        step_callback = self.deforumstepCallback_signal,
                                         show_sample_per_step=show_sample_per_step,
 
                                         )
         self.stop_painters()
-        self.w.thumbnails.setUpdatesEnabled(True)
-    def deforum_step_cb(self, data, *args, **kwargs):
-        print(data.keys())
-        print(type(data['x']))
-        print(type(data['i']))
-        print(type(data['sigma']))
-        print(type(data['sigma_hat']))
-        print(type(data['denoised']))
+        #self.w.thumbnails.setUpdatesEnabled(True)
+
+    def deforumTest(self, *args, **kwargs):
+        saved_args = locals()
+        #print(callback.x)
+        print("saved_args is", saved_args)
+
+    def imageCallback_signal(self, image, *args, **kwargs):
+        self.image = image
+        self.signals.txt2img_finished.connect(self.imageCallback_func)
+        self.signals.txt2img_finished.emit()
+    def deforumstepCallback_signal(self, data):
+        self.data = data
+        self.signals.deforum_step.connect(self.deforumstepCallback_func)
+        self.signals.deforum_step.emit()
+    @Slot()
+    def deforumstepCallback_func(self, *args, **kwargs):
+        #print(type(data['x']))
+        #print(type(data['i']))
+        #print(type(data['sigma']))
+        #print(type(data['sigma_hat']))
+        #print(type(data['denoised']))
 
         self.updateRate = self.w.sizer_count.w.previewSlider.value()
-
-
         self.progress = self.progress + self.onePercent
         self.w.progressBar.setValue(self.progress)
-        # Pass the function to execute
-        self.liveWorker2 = Worker(self.liveUpdate(data['denoised'], data['i']))
+        self.liveUpdate(self.data['denoised'], self.data['i'])
+    @Slot()
+    def imageCallback_func(self, image=None, seed=None, upscaled=False, use_prefix=None, first_seed=None):
 
-        #with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        #    self.liveUpdate(data1, data2)
+        self.vpainter["iins"].begin(self.ipixmap)
+        qimage = ImageQt(self.image)
+        self.vpainter["iins"].drawImage(QRect(0, 0, 512, 512), qimage)
+        self.w.dynaimage.w.label.setPixmap(self.ipixmap.scaled(512, 512, Qt.AspectRatioMode.KeepAspectRatio))
+        self.vpainter["iins"].end()
+        self.w.thumbnails.thumbs.addItem(QListWidgetItem(QIcon(self.image_path), str(self.w.prompt.w.textEdit.toPlainText())))
 
-        self.threadpool.start(self.liveWorker2)
 
     def run_txt2img(self, progress_callback=None):
 
@@ -549,8 +522,8 @@ class GenerateWindow(QObject):
                                                gfpgan_strength = gfpgan_strength,
                                                strength = 0.0,
                                                full_precision = full_precision,
-                                               step_callback=self.testThread,
-                                               image_callback=self.image_cb)
+                                               step_callback=self.deforumstepCallback_signal,
+                                               image_callback=self.imageCallback_signal)
                 for row in results:
                     print(f'filename={row[0]}')
                     print(f'seed    ={row[1]}')
@@ -559,14 +532,14 @@ class GenerateWindow(QObject):
                     row[0].save(output)
                     self.image_path = output
                     #print("We did set the image")
-                    #self.w.thumbnails.thumbs.addItem(QListWidgetItem(QIcon(self.image_path), str(self.w.prompt.w.textEdit.toPlainText())))
+                    #
                     #self.get_pic(clear=False)
                 self.w.statusBar().showMessage("Ready...")
         self.stop_painters()
         self.w.thumbnails.setUpdatesEnabled(True)
 
     def deforum_thread(self):
-        self.w.thumbnails.setUpdatesEnabled(False)
+        #self.w.thumbnails.setUpdatesEnabled(False)
 
         worker = Worker(self.run_deforum)
         #worker.signals.progress.connect(self.testThread)
@@ -765,36 +738,6 @@ class GenerateWindow(QObject):
         #dynapixmap = QPixmap(QPixmap.fromImage(dqimg))
     def pass_object(self, progress_callback=None):
         pass
-    def image_cb(self, image, seed=None, upscaled=False, use_prefix=None, first_seed=None):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-
-            try:
-
-                #gs.callbackBusy = True
-                #dimg = ImageQt(image)
-                #dpixmap = QPixmap(QPixmap.fromImage(dimg))
-                #iins = random.randint(10000, 99999)
-                #dpixmap = QPixmap(512, 512)
-
-                #self.vpainter[iins].device()
-
-
-                try:
-                    self.vpainter["iins"].begin(self.ipixmap)
-                except:
-                    pass
-                qimage = ImageQt(image)
-                self.vpainter["iins"].drawImage(QRect(0, 0, 512, 512), qimage)
-
-
-
-                self.w.dynaimage.w.label.setPixmap(self.ipixmap.scaled(512, 512, Qt.AspectRatioMode.KeepAspectRatio))
-                #self.vpainter["iins"].end()
-                #gs.callbackBusy = False
-                #self.w.dynaimage.w.label.update()
-                self.vpainter["iins"].end()
-            except:
-                pass
 
     def get_pic(self, clear=False): #from self.image_path
         #for item in self.w.preview.w.scene.items():
