@@ -372,6 +372,9 @@
              <property name="text">
               <string>Use AdaBins</string>
              </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
             </widget>
            </item>
            <item>
@@ -379,12 +382,18 @@
              <property name="text">
               <string>clear Latent</string>
              </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
             </widget>
            </item>
            <item>
             <widget class="QCheckBox" name="clearSample">
              <property name="text">
               <string>clear sample</string>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
              </property>
             </widget>
            </item>

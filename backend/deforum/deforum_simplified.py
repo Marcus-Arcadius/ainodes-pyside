@@ -330,6 +330,26 @@ class DeforumGenerator():
         self.strength_schedule_series = get_inbetweens(parse_key_frames(self.strength_schedule), self.max_frames)
         self.contrast_schedule_series = get_inbetweens(parse_key_frames(self.contrast_schedule), self.max_frames)
 
+    def deforumkeys(self):
+
+        gs.angle_series = get_inbetweens(parse_key_frames(self.angle), self.max_frames)
+        gs.zoom_series = get_inbetweens(parse_key_frames(self.zoom), self.max_frames)
+        gs.translation_x_series = get_inbetweens(parse_key_frames(self.translation_x), self.max_frames)
+        gs.translation_y_series = get_inbetweens(parse_key_frames(self.translation_y), self.max_frames)
+        gs.translation_z_series = get_inbetweens(parse_key_frames(self.translation_z), self.max_frames)
+        gs.rotation_3d_x_series = get_inbetweens(parse_key_frames(self.rotation_3d_x), self.max_frames)
+        gs.rotation_3d_y_series = get_inbetweens(parse_key_frames(self.rotation_3d_y), self.max_frames)
+        gs.rotation_3d_z_series = get_inbetweens(parse_key_frames(self.rotation_3d_z), self.max_frames)
+        gs.perspective_flip_theta_series = get_inbetweens(parse_key_frames(self.perspective_flip_theta), self.max_frames)
+        gs.perspective_flip_phi_series = get_inbetweens(parse_key_frames(self.perspective_flip_phi), self.max_frames)
+        gs.perspective_flip_gamma_series = get_inbetweens(parse_key_frames(self.perspective_flip_gamma), self.max_frames)
+        gs.perspective_flip_fv_series = get_inbetweens(parse_key_frames(self.perspective_flip_fv), self.max_frames)
+        gs.noise_schedule_series = get_inbetweens(parse_key_frames(self.noise_schedule), self.max_frames)
+        gs.strength_schedule_series = get_inbetweens(parse_key_frames(self.strength_schedule), self.max_frames)
+        gs.contrast_schedule_series = get_inbetweens(parse_key_frames(self.contrast_schedule), self.max_frames)
+
+
+        print(f"We should have a translation series of 10: {gs.translation_z_series}")
 
     def render_animation(self,
                          image_callback = None,
@@ -397,12 +417,12 @@ class DeforumGenerator():
                          max_frames = 10, # @Dparam {type:"number"}
                          border = 'replicate',  # @param ['wrap', 'replicate'] {type:'string'}
                          angle = "0:(0)", # @param {type:"string"}
-                         zoom = "0:(1.04)",  # @param {type:"string"}
+                         zoom = "0:(1.0)",  # @param {type:"string"}
                          translation_x = "0:(10*sin(2*3.14*t/10))",  # @param {type:"string"}
-                         translation_y = "0:(0)",  # @param {type:"string"}
+                         translation_y = "0:(2)",  # @param {type:"string"}
                          translation_z = "0:(10)",  # @param {type:"string"}
                          rotation_3d_x = "0:(0)",  # @param {type:"string"}
-                         rotation_3d_y = "0:(0)",  # @param {type:"string"}
+                         rotation_3d_y = "0:(-7)",  # @param {type:"string"}
                          rotation_3d_z = "0:(0)",  # @param {type:"string"}
                          flip_2d_perspective = False,  # @param {type:"boolean"}
                          perspective_flip_theta = "0:(0)",  # @param {type:"string"}
@@ -414,7 +434,7 @@ class DeforumGenerator():
                          contrast_schedule = "0: (1.0)", # @param {type:"string"}
                          # @markdown ####**Coherence:**
                          color_coherence = 'Match Frame 0 LAB',  # @param ['None', 'Match Frame 0 HSV', 'Match Frame 0 LAB', 'Match Frame 0 RGB'] {type:'string'}
-                         diffusion_cadence = '1',  # @param ['1','2','3','4','5','6','7','8'] {type:'string'}
+                         diffusion_cadence = 1,  # @param ['1','2','3','4','5','6','7','8'] {type:'string'}
                          # @markdown ####**3D Depth Warping:**
                          use_depth_warping = True,  # @param {type:"boolean"}
                          midas_weight = 0.3, # @param {type:"number"}
@@ -442,18 +462,34 @@ class DeforumGenerator():
                          prev_sample = None,
                          clear_latent = False,
                          clear_sample = False,
+                         keys = {},
                          *args,
                          **kwargs):
         self.clear_latent = clear_latent
         self.clear_sample = clear_sample
         self.use_init = use_init
 
-        print(f"debug deforum: {self.clear_latent}, {self.clear_sample}")
+        self.angle = angle
+        self.zoom = zoom
+        self.translation_x = translation_x
+        self.translation_y = translation_y
+        self.translation_z = translation_z
+        self.rotation_3d_x = rotation_3d_x
+        self.rotation_3d_y = rotation_3d_y
+        self.rotation_3d_z = rotation_3d_z
+        self.flip_2d_perspective = flip_2d_perspective
+        self.perspective_flip_theta = perspective_flip_theta
+        self.perspective_flip_phi = perspective_flip_phi
+        self.perspective_flip_gamma = perspective_flip_gamma
+        self.perspective_flip_fv = perspective_flip_fv
+        self.noise_schedule = noise_schedule
+        self.strength_schedule = strength_schedule
+        self.contrast_schedule = contrast_schedule
+
         if self.clear_latent == True:
             self.init_latent = None
             self.init_c = None
         if self.clear_sample == True:
-            print("clearing everyhing supposedly..")
             self.init_sample = None
 
             self.prev_sample = None
@@ -476,7 +512,7 @@ class DeforumGenerator():
         #prompts = animation_prompts
 
         # expand key frame strings to values
-        keys = DeformAnimKeys(self)
+        self.deforumkeys()
 
         # resume animation
         start_frame = 0
@@ -513,7 +549,7 @@ class DeforumGenerator():
         predict_depths = (animation_mode == '3D' and use_depth_warping) or save_depth_maps
         if predict_depths:
             if "depth_model" not in self.gs.models:
-                depth_model = DepthModel(self.gs, 'cuda')
+                depth_model = DepthModel('cuda')
                 depth_model.load_midas('models/')
                 if midas_weight < 1.0:
                     if self.adabins:
@@ -525,7 +561,7 @@ class DeforumGenerator():
             save_depth_maps = False
 
         # state for interpolating between diffusion steps
-        turbo_steps = 1 if using_vid_init else int(diffusion_cadence)
+        turbo_steps = 1 if using_vid_init else int(self.diffusion_cadence)
         turbo_prev_image, turbo_prev_frame_idx = None, 0
         turbo_next_image, turbo_next_frame_idx = None, 0
 
@@ -547,13 +583,19 @@ class DeforumGenerator():
                 turbo_prev_image, turbo_prev_frame_idx = turbo_next_image, turbo_next_frame_idx
                 start_frame = last_frame + turbo_steps
 
-        n_samples = 1
+        self.n_samples = 1
         frame_idx = start_frame
         while frame_idx < max_frames:
             print(f"Rendering animation frame {frame_idx} of {max_frames}")
-            noise = keys.noise_schedule_series[frame_idx]
-            strength = keys.strength_schedule_series[frame_idx]
-            contrast = keys.contrast_schedule_series[frame_idx]
+            noise = gs.noise_schedule_series[frame_idx]
+            strength = gs.strength_schedule_series[frame_idx]
+
+            print(f'keys: {keys}')
+            print(gs.contrast_schedule_series)
+            print(gs.contrast_schedule_series[frame_idx])
+
+
+            contrast = gs.contrast_schedule_series[frame_idx]
             depth = None
 
             # emit in-between frames
@@ -574,14 +616,14 @@ class DeforumGenerator():
 
                     if animation_mode == '2D':
                         if advance_prev:
-                            turbo_prev_image = anim_frame_warp_2d(turbo_prev_image, keys, tween_frame_idx, W, H, flip_2d_perspective, border)
+                            turbo_prev_image = anim_frame_warp_2d(turbo_prev_image, gs, tween_frame_idx, W, H, flip_2d_perspective, border)
                         if advance_next:
-                            turbo_next_image = anim_frame_warp_2d(turbo_next_image, keys, tween_frame_idx, W, H, flip_2d_perspective, border)
+                            turbo_next_image = anim_frame_warp_2d(turbo_next_image, gs, tween_frame_idx, W, H, flip_2d_perspective, border)
                     else:  # '3D'
                         if advance_prev:
-                            turbo_prev_image = anim_frame_warp_3d(turbo_prev_image, depth, keys, tween_frame_idx)
+                            turbo_prev_image = anim_frame_warp_3d(turbo_prev_image, depth, gs, tween_frame_idx)
                         if advance_next:
-                            turbo_next_image = anim_frame_warp_3d(turbo_next_image, depth, keys, tween_frame_idx)
+                            turbo_next_image = anim_frame_warp_3d(turbo_next_image, depth, gs, tween_frame_idx)
                     turbo_prev_frame_idx = turbo_next_frame_idx = tween_frame_idx
 
                     if turbo_prev_image is not None and tween < 1.0:
@@ -601,11 +643,11 @@ class DeforumGenerator():
             # apply transforms to previous frame
             if prev_sample is not None:
                 if animation_mode == '2D':
-                    prev_img = anim_frame_warp_2d(sample_to_cv2(prev_sample), keys, frame_idx, W, H, flip_2d_perspective, border)
+                    prev_img = anim_frame_warp_2d(sample_to_cv2(prev_sample), gs, frame_idx, W, H, flip_2d_perspective, border)
                 else:  # '3D'
                     prev_img_cv2 = sample_to_cv2(prev_sample)
                     depth = depth_model.predict(prev_img_cv2, midas_weight) if depth_model else None
-                    prev_img = anim_frame_warp_3d(prev_img_cv2, depth, keys, frame_idx, near_plane, far_plane,
+                    prev_img = anim_frame_warp_3d(prev_img_cv2, depth, gs, frame_idx, near_plane, far_plane,
                                                   fov, sampling_mode, padding_mode)
 
                 # apply color matching
@@ -633,11 +675,11 @@ class DeforumGenerator():
             self.prompt = prompt_series[frame_idx]
             print(f"{prompt} {seed}")
             if not using_vid_init:
-                print(f"Angle: {keys.angle_series[frame_idx]} Zoom: {keys.zoom_series[frame_idx]}")
+                print(f"Angle: {gs.angle_series[frame_idx]} Zoom: {gs.zoom_series[frame_idx]}")
                 print(
-                    f"Tx: {keys.translation_x_series[frame_idx]} Ty: {keys.translation_y_series[frame_idx]} Tz: {keys.translation_z_series[frame_idx]}")
+                    f"Tx: {gs.translation_x_series[frame_idx]} Ty: {gs.translation_y_series[frame_idx]} Tz: {gs.translation_z_series[frame_idx]}")
                 print(
-                    f"Rx: {keys.rotation_3d_x_series[frame_idx]} Ry: {keys.rotation_3d_y_series[frame_idx]} Rz: {keys.rotation_3d_z_series[frame_idx]}")
+                    f"Rx: {gs.rotation_3d_x_series[frame_idx]} Ry: {gs.rotation_3d_y_series[frame_idx]} Rz: {gs.rotation_3d_z_series[frame_idx]}")
 
             # grab init image for current frame
             if using_vid_init:
@@ -695,27 +737,27 @@ class DeforumGenerator():
         data = [batch_size * [prompt]]
         precision_scope = autocast if self.precision == "autocast" else nullcontext
 
-        init_latent = None
-        mask_image = None
-        init_image = None
+        #init_latent = None
+        #mask_image = None
+        #init_image = None
         if self.init_latent is not None:
-            init_latent = self.init_latent
+            self.init_latent = self.init_latent
         elif self.init_sample is not None:
             with precision_scope("cuda"):
-                init_latent = self.gs.models["sd"].get_first_stage_encoding(
+                self.init_latent = self.gs.models["sd"].get_first_stage_encoding(
                     self.gs.models["sd"].encode_first_stage(self.init_sample))
 
 
         elif self.use_init and self.init_image != None and self.init_image != '':
-            init_image, mask_image = load_img(self.init_image,
+            self.init_image, mask_image = load_img(self.init_image,
                                               shape=(self.W, self.H),
                                               use_alpha_as_mask=self.use_alpha_as_mask)
-            init_image = init_image.to('cuda')
-            init_image = repeat(init_image, '1 ... -> b ...', b=batch_size)
+            self.init_image = self.init_image.to('cuda')
+            self.init_image = repeat(self.init_image, '1 ... -> b ...', b=batch_size)
             with precision_scope("cuda"):
-                init_latent = self.gs.models["sd"].get_first_stage_encoding(
-                    self.gs.models["sd"].encode_first_stage(init_image))  # move to latent space
-        self.init_latent = init_latent
+                self.init_latent = self.gs.models["sd"].get_first_stage_encoding(
+                    self.gs.models["sd"].encode_first_stage(self.init_image))  # move to latent space
+        #self.init_latent = init_latent
         if not self.use_init and self.strength > 0 and self.strength_0_no_init:
             print("\nNo init image, but strength > 0. Strength has been auto set to 0, since use_init is False.")
             print("If you want to force strength > 0 with no init, please set strength_0_no_init to False.\n")
@@ -725,10 +767,10 @@ class DeforumGenerator():
         if self.use_mask:
             assert self.mask_file is not None or mask_image is not None, "use_mask==True: An mask image is required for a mask. Please enter a mask_file or use an init image with an alpha channel"
             assert self.use_init, "use_mask==True: use_init is required for a mask"
-            assert init_latent is not None, "use_mask==True: An latent init image is required for a mask"
+            assert self.init_latent is not None, "use_mask==True: An latent init image is required for a mask"
 
             mask = prepare_mask(self.mask_file if mask_image is None else mask_image,
-                                init_latent.shape,
+                                self.init_latent.shape,
                                 self.mask_contrast_adjust,
                                 self.mask_brightness_adjust)
 
@@ -742,7 +784,7 @@ class DeforumGenerator():
             mask = None
 
         assert not ((self.use_mask and self.overlay_mask) and (
-                    self.init_sample is None and init_image is None)), "Need an init image when use_mask == True and overlay_mask == True"
+                    self.init_sample is None and self.init_image is None)), "Need an init image when use_mask == True and overlay_mask == True"
 
         self.t_enc = int((1.0 - self.strength) * self.steps)
 
@@ -761,8 +803,8 @@ class DeforumGenerator():
                                     sampler_name=self.sampler,
                                     timestring=self.timestring,
                                     seed=self.seed,
-                                   sigmas=k_sigmas,
-                                   verbose=False).callback
+                                    sigmas=k_sigmas,
+                                    verbose=False).callback
 
 
         #callback = None
@@ -775,7 +817,7 @@ class DeforumGenerator():
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
                         if self.prompt_weighting:
-                            self.uc, self.c = get_uc_and_c(prompts, self.gs.models["sd"], self, frame)
+                            self.uc, self.c = get_uc_and_c(prompts, self.gs.models["sd"], self.n_samples, self.log_weighted_subprompts, self.normalize_prompt_weights, frame)
                         else:
                             self.uc = self.gs.models["sd"].get_learned_conditioning(batch_size * [""])
                             self.c = self.gs.models["sd"].get_learned_conditioning(prompts)
@@ -827,8 +869,8 @@ class DeforumGenerator():
                             # Overlay the masked image after the image is generated
                             if self.init_sample is not None:
                                 img_original = self.init_sample
-                            elif init_image is not None:
-                                img_original = init_image
+                            elif self.init_image is not None:
+                                img_original = self.init_image
                             else:
                                 raise Exception("Cannot overlay the masked image without an init image to overlay")
 

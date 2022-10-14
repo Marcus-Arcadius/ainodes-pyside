@@ -11,14 +11,15 @@ from PIL import Image
 from infer import InferenceHelper
 from midas.dpt_depth import DPTDepthModel
 from midas.transforms import Resize, NormalizeImage, PrepareForNet
-
+from backend.singleton import singleton
+gs = singleton
 
 def wget(url, outputdir):
     print(subprocess.run(['wget', url, '-P', outputdir], stdout=subprocess.PIPE).stdout.decode('utf-8'))
 
 
 class DepthModel():
-    def __init__(self, gs, device):
+    def __init__(self, device):
         self.gs = gs
         self.adabins_helper = None
         self.depth_min = 1000

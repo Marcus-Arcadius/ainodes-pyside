@@ -244,7 +244,6 @@ def anim_frame_warp_3d(prev_img_cv2, depth, keys, frame_idx, near_plane, far_pla
     rot_mat = p3d.euler_angles_to_matrix(torch.tensor(rotate_xyz, device="cuda"), "XYZ").unsqueeze(0)
 
 
-    print(prev_img_cv2, depth, keys, frame_idx, near_plane, far_plane, fov, sampling_mode, padding_mode)
     result = transform_image_3d(prev_img_cv2, depth, rot_mat, translate_xyz, near_plane, far_plane, fov, sampling_mode, padding_mode)
     torch.cuda.empty_cache()
     return result
@@ -521,32 +520,32 @@ def check_is_number(value):
 # prompt weighting with colons and number coefficients (like 'bacon:0.75 eggs:0.25')
 # borrowed from https://github.com/kylewlacy/stable-diffusion/blob/0a4397094eb6e875f98f9d71193e350d859c4220/ldm/dream/conditioning.py
 # and https://github.com/raefu/stable-diffusion-automatic/blob/unstablediffusion/modules/processing.py
-def get_uc_and_c(prompts, model, args, frame = 0):
+def get_uc_and_c(prompts, model, n_samples, log_weighted_subprompts, normalize_prompt_weights, frame = 0):
     prompt = prompts[0] # they are the same in a batch anyway
 
     # get weighted sub-prompts
     negative_subprompts, positive_subprompts = split_weighted_subprompts(
-        prompt, frame, not args.normalize_prompt_weights
+        prompt, frame, not normalize_prompt_weights
     )
 
-    uc = get_learned_conditioning(model, negative_subprompts, "", args, -1)
-    c = get_learned_conditioning(model, positive_subprompts, prompt, args, 1)
+    uc = get_learned_conditioning(model, negative_subprompts, "", n_samples, log_weighted_subprompts, -1)
+    c = get_learned_conditioning(model, positive_subprompts, prompt, n_samples, log_weighted_subprompts, 1)
 
     return (uc, c)
 
-def get_learned_conditioning(model, weighted_subprompts, text, args, sign = 1):
+def get_learned_conditioning(model, weighted_subprompts, text, n_samples, log_weighted_subprompts, sign = 1):
     if len(weighted_subprompts) < 1:
-        log_tokenization(text, model, args.log_weighted_subprompts, sign)
-        c = model.get_learned_conditioning(args.n_samples * [text])
+        log_tokenization(text, model, log_weighted_subprompts, sign)
+        c = model.get_learned_conditioning(n_samples * [text])
     else:
         c = None
         for subtext, subweight in weighted_subprompts:
-            log_tokenization(subtext, model, args.log_weighted_subprompts, sign * subweight)
+            log_tokenization(subtext, model, log_weighted_subprompts, sign * subweight)
             if c is None:
-                c = model.get_learned_conditioning(args.n_samples * [subtext])
+                c = model.get_learned_conditioning(n_samples * [subtext])
                 c *= subweight
             else:
-                c.add_(model.get_learned_conditioning(args.n_samples * [subtext]), alpha=subweight)
+                c.add_(model.get_learned_conditioning(n_samples * [subtext]), alpha=subweight)
 
     return c
 
@@ -1025,24 +1024,24 @@ def DeforumAnimArgs():
     return locals()
 
 class DeformAnimKeys():
-    def __init__(self, anim_args):
-        print(anim_args.max_frames)
-        print(anim_args.angle)
-        self.angle_series = get_inbetweens(parse_key_frames(anim_args.angle), anim_args.max_frames)
-        self.zoom_series = get_inbetweens(parse_key_frames(anim_args.zoom), anim_args.max_frames)
-        self.translation_x_series = get_inbetweens(parse_key_frames(anim_args.translation_x), anim_args.max_frames)
-        self.translation_y_series = get_inbetweens(parse_key_frames(anim_args.translation_y), anim_args.max_frames)
-        self.translation_z_series = get_inbetweens(parse_key_frames(anim_args.translation_z), anim_args.max_frames)
-        self.rotation_3d_x_series = get_inbetweens(parse_key_frames(anim_args.rotation_3d_x), anim_args.max_frames)
-        self.rotation_3d_y_series = get_inbetweens(parse_key_frames(anim_args.rotation_3d_y), anim_args.max_frames)
-        self.rotation_3d_z_series = get_inbetweens(parse_key_frames(anim_args.rotation_3d_z), anim_args.max_frames)
-        self.perspective_flip_theta_series = get_inbetweens(parse_key_frames(anim_args.perspective_flip_theta), anim_args.max_frames)
-        self.perspective_flip_phi_series = get_inbetweens(parse_key_frames(anim_args.perspective_flip_phi), anim_args.max_frames)
-        self.perspective_flip_gamma_series = get_inbetweens(parse_key_frames(anim_args.perspective_flip_gamma), anim_args.max_frames)
-        self.perspective_flip_fv_series = get_inbetweens(parse_key_frames(anim_args.perspective_flip_fv), anim_args.max_frames)
-        self.noise_schedule_series = get_inbetweens(parse_key_frames(anim_args.noise_schedule), anim_args.max_frames)
-        self.strength_schedule_series = get_inbetweens(parse_key_frames(anim_args.strength_schedule), anim_args.max_frames)
-        self.contrast_schedule_series = get_inbetweens(parse_key_frames(anim_args.contrast_schedule), anim_args.max_frames)
+    def __init__(self):
+        print(self.max_frames)
+        print(self.angle)
+        self.angle_series = get_inbetweens(parse_key_frames(self.angle), self.max_frames)
+        self.zoom_series = get_inbetweens(parse_key_frames(self.zoom), self.max_frames)
+        self.translation_x_series = get_inbetweens(parse_key_frames(self.translation_x), self.max_frames)
+        self.translation_y_series = get_inbetweens(parse_key_frames(self.translation_y), self.max_frames)
+        self.translation_z_series = get_inbetweens(parse_key_frames(self.translation_z), self.max_frames)
+        self.rotation_3d_x_series = get_inbetweens(parse_key_frames(self.rotation_3d_x), self.max_frames)
+        self.rotation_3d_y_series = get_inbetweens(parse_key_frames(self.rotation_3d_y), self.max_frames)
+        self.rotation_3d_z_series = get_inbetweens(parse_key_frames(self.rotation_3d_z), self.max_frames)
+        self.perspective_flip_theta_series = get_inbetweens(parse_key_frames(self.perspective_flip_theta), self.max_frames)
+        self.perspective_flip_phi_series = get_inbetweens(parse_key_frames(self.perspective_flip_phi), self.max_frames)
+        self.perspective_flip_gamma_series = get_inbetweens(parse_key_frames(self.perspective_flip_gamma), self.max_frames)
+        self.perspective_flip_fv_series = get_inbetweens(parse_key_frames(self.perspective_flip_fv), self.max_frames)
+        self.noise_schedule_series = get_inbetweens(parse_key_frames(self.noise_schedule), self.max_frames)
+        self.strength_schedule_series = get_inbetweens(parse_key_frames(self.strength_schedule), self.max_frames)
+        self.contrast_schedule_series = get_inbetweens(parse_key_frames(self.contrast_schedule), self.max_frames)
 
 
 def get_inbetweens(key_frames, max_frames, integer=False, interp_method='Linear'):
