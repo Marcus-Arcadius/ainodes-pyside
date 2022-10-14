@@ -20,7 +20,7 @@ from backend.deforum import DepthModel, sampler_fn
 
 from backend.deforum.deforum_generator import prepare_mask, get_uc_and_c, DeformAnimKeys, sample_from_cv2, \
     sample_to_cv2, anim_frame_warp_2d, anim_frame_warp_3d, maintain_colors, add_noise, next_seed, \
-    load_img
+    load_img, get_inbetweens, parse_key_frames
 from ldm.dream.devices import choose_torch_device
 
 from ldm.generate import Generate
@@ -46,140 +46,227 @@ from ldm.util import instantiate_from_config
 class DeforumGenerator():
 
 
-    #gr = Generate(  gs,
-    #                weights='models/sd-v1-4.ckpt',
-    #                config='configs/stable-diffusion/v1-inference.yaml',
-    #              )
-    prompts = [
-        "a beautiful forest by Asher Brown Durand, trending on Artstation",  # the first prompt I want
-        "a beautiful portrait of a woman by Artgerm, trending on Artstation",  # the second prompt I want
-        # "this prompt I don't want it I commented it out",
-        # "a nousr robot, trending on Artstation", # use "nousr robot" with the robot diffusion model (see model_checkpoint setting)
-        # "touhou 1girl komeiji_koishi portrait, green hair", # waifu diffusion prompts can use danbooru tag groups (see model_checkpoint)
-        # "this prompt has weights if prompt weighting enabled:2 can also do negative:-2", # (see prompt_weighting)
-    ]
-    animation_prompts = {
-        0: "The perfect symmetric violin",
-        20: "the perfect symmetric violin",
-        30: "a beautiful coconut, trending on Artstation",
-        40: "a beautiful durian, trending on Artstation",
-    }
-    W = 512  # @param
-    H = 512  # @param
-    W, H = map(lambda x: x - x % 64, (W, H))  # resize to integer multiple of 64
-    seed = -1  # @param
-    sampler = 'klms'  # @param ["klms","dpm2","dpm2_ancestral","heun","euler","euler_ancestral","plms", "ddim"]
-    steps = 20  # @param
-    scale = 7  # @param
-    ddim_eta = 0.0  # @param
-    dynamic_threshold = None
-    static_threshold = None
-    # @markdown **Save & Display Settings**
-    save_samples = True  # @param {type:"boolean"}
-    save_settings = True  # @param {type:"boolean"}
-    display_samples = True  # @param {type:"boolean"}
-    save_sample_per_step = False  # @param {type:"boolean"}
-    show_sample_per_step = False  # @param {type:"boolean"}
-    prompt_weighting = False  # @param {type:"boolean"}
-    normalize_prompt_weights = True  # @param {type:"boolean"}
-    log_weighted_subprompts = False  # @param {type:"boolean"}
 
-    n_batch = 1  # @param
-    batch_name = "StableFun"  # @param {type:"string"}
-    filename_format = "{timestring}_{index}_{prompt}.png"  # @param ["{timestring}_{index}_{seed}.png","{timestring}_{index}_{prompt}.png"]
-    seed_behavior = "iter"  # @param ["iter","fixed","random"]
-    make_grid = False  # @param {type:"boolean"}
-    grid_rows = 2  # @param
-    outdir = "output"
-    use_init = False  # @param {type:"boolean"}
-    strength = 0.0  # @param {type:"number"}
-    strength_0_no_init = True  # Set the strength to 0 automatically when no init image is used
-    init_image = "https://cdn.pixabay.com/photo/2022/07/30/13/10/green-longhorn-beetle-7353749_1280.jpg"  # @param {type:"string"}
-    # Whiter areas of the mask are areas that change more
-    use_mask = False  # @param {type:"boolean"}
-    use_alpha_as_mask = False  # use the alpha channel of the init image as the mask
-    mask_file = "https://www.filterforge.com/wiki/images/archive/b/b7/20080927223728%21Polygonal_gradient_thumb.jpg"  # @param {type:"string"}
-    invert_mask = False  # @param {type:"boolean"}
-    # Adjust mask image, 1.0 is no adjustment. Should be positive numbers.
-    mask_brightness_adjust = 1.0  # @param {type:"number"}
-    mask_contrast_adjust = 1.0  # @param {type:"number"}
-    # Overlay the masked image at the end of the generation so it does not get degraded by encoding and decoding
-    overlay_mask = True  # {type:"boolean"}
-    # Blur edges of final overlay mask, if used. Minimum = 0 (no blur)
-    mask_overlay_blur = 5  # {type:"number"}
+    def __init__(self,
+                gs,
+                prompts = "a beautiful forest by Asher Brown Durand, trending on Artstation",
+                animation_prompts = 'test',
+                H = 512,
+                W = 512,
+                seed = -1,  # @param
+                sampler = 'klms',  # @param ["klms","dpm2","dpm2_ancestral","heun","euler","euler_ancestral","plms", "ddim"]
+                steps = 20,  # @param
+                scale = 7,  # @param
+                ddim_eta = 0.0,  # @param
+                dynamic_threshold = None,
+                static_threshold = None,
+                # @markdown **Save & Display Settings**
+                save_samples = True, # @param {type:"boolean"}
+                save_settings = True,  # @param {type:"boolean"}
+                display_samples = True,  # @param {type:"boolean"}
+                save_sample_per_step = False,  # @param {type:"boolean"}
+                show_sample_per_step = False,  # @param {type:"boolean"}
+                prompt_weighting = False,  # @param {type:"boolean"}
+                normalize_prompt_weights = True,  # @param {type:"boolean"}
+                log_weighted_subprompts = False,  # @param {type:"boolean"}
 
-    n_samples = 1  # doesnt do anything
-    precision = 'autocast'
-    C = 4
-    f = 8
+                n_batch = 1,  # @param
+                batch_name = "StableFun",  # @param {type:"string"}
+                filename_format = "{timestring}_{index}_{prompt}.png",  # @param ["{timestring}_{index}_{seed}.png","{timestring}_{index}_{prompt}.png"]
+                seed_behavior = "iter",  # @param ["iter","fixed","random"]
+                make_grid = False,  # @param {type:"boolean"}
+                grid_rows = 2,  # @param
+                outdir = "output",
+                use_init = False,  # @param {type:"boolean"}
+                strength = 0.0,  # @param {type:"number"}
+                strength_0_no_init = True,  # Set the strength to 0 automatically when no init image is used
+                init_image = "",  # @param {type:"string"}
+                # Whiter areas of the mask are areas that change more
+                use_mask = False,  # @param {type:"boolean"}
+                use_alpha_as_mask = False,  # use the alpha channel of the init image as the mask
+                mask_file = "",  # @param {type:"string"}
+                invert_mask = False, # @param {type:"boolean"}
+                # Adjust mask image, 1.0 is no adjustment. Should be positive numbers.
+                mask_brightness_adjust = 1.0,  # @param {type:"number"}
+                mask_contrast_adjust = 1.0,  # @param {type:"number"}
+                # Overlay the masked image at the end of the generation so it does not get degraded by encoding and decoding
+                overlay_mask = True,  # {type:"boolean"}
+                # Blur edges of final overlay mask, if used. Minimum = 0 (no blur)
+                mask_overlay_blur = 5,  # {type:"number"}
 
-    prompt = ""
-    timestring = ""
-    init_latent = None
-    init_sample = None
-    init_c = None
+                n_samples = 1, # doesnt do anything
+                precision = 'autocast',
+                C = 4,
+                f = 8,
 
-    # Anim Args
+                prompt = "",
+                timestring = "",
+                init_latent = None,
+                init_sample = None,
+                init_c = None,
 
-    animation_mode = '3D'  # @param ['None', '2D', '3D', 'Video Input', 'Interpolation'] {type:'string'}
-    max_frames = 10  # @Dparam {type:"number"}
-    border = 'replicate'  # @param ['wrap', 'replicate'] {type:'string'}
-    # @markdown ####**Motion Parameters:**
-    angle = "0:(0)"  # @param {type:"string"}
-    zoom = "0:(1.04)"  # @param {type:"string"}
-    translation_x = "0:(10*sin(2*3.14*t/10))"  # @param {type:"string"}
-    translation_y = "0:(0)"  # @param {type:"string"}
-    translation_z = "0:(10)"  # @param {type:"string"}
-    rotation_3d_x = "0:(0)"  # @param {type:"string"}
-    rotation_3d_y = "0:(0)"  # @param {type:"string"}
-    rotation_3d_z = "0:(0)"  # @param {type:"string"}
-    flip_2d_perspective = False  # @param {type:"boolean"}
-    perspective_flip_theta = "0:(0)"  # @param {type:"string"}
-    perspective_flip_phi = "0:(t%15)"  # @param {type:"string"}
-    perspective_flip_gamma = "0:(0)"  # @param {type:"string"}
-    perspective_flip_fv = "0:(53)"  # @param {type:"string"}
-    noise_schedule = "0: (0.02)"  # @param {type:"string"}
-    strength_schedule = "0: (0.65)"  # @param {type:"string"}
-    contrast_schedule = "0: (1.0)"  # @param {type:"string"}
-    # @markdown ####**Coherence:**
-    color_coherence = 'Match Frame 0 LAB'  # @param ['None', 'Match Frame 0 HSV', 'Match Frame 0 LAB', 'Match Frame 0 RGB'] {type:'string'}
-    diffusion_cadence = '1'  # @param ['1','2','3','4','5','6','7','8'] {type:'string'}
-    # @markdown ####**3D Depth Warping:**
-    use_depth_warping = True  # @param {type:"boolean"}
-    midas_weight = 0.3  # @param {type:"number"}
-    near_plane = 200
-    far_plane = 10000
-    fov = 40  # @param {type:"number"}
-    padding_mode = 'border'  # @param ['border', 'reflection', 'zeros'] {type:'string'}
-    sampling_mode = 'bicubic'  # @param ['bicubic', 'bilinear', 'nearest'] {type:'string'}
-    save_depth_maps = False  # @param {type:"boolean"}
+                # Anim Args
 
-    # @markdown ####**Video Input:**
-    video_init_path = '/content/video_in.mp4'  # @param {type:"string"}
-    extract_nth_frame = 1  # @param {type:"number"}
-    overwrite_extracted_frames = True  # @param {type:"boolean"}
-    use_mask_video = False  # @param {type:"boolean"}
-    video_mask_path = '/content/video_in.mp4'  # @param {type:"string"}
+                animation_mode = '3D',  # @param ['None', '2D', '3D', 'Video Input', 'Interpolation'] {type:'string'}
+                max_frames = 10, # @Dparam {type:"number"}
+                border = 'replicate',  # @param ['wrap', 'replicate'] {type:'string'}
+                angle = "0:(0)", # @param {type:"string"}
+                zoom = "0:(1.04)",  # @param {type:"string"}
+                translation_x = "0:(10*sin(2*3.14*t/10))",  # @param {type:"string"}
+                translation_y = "0:(0)",  # @param {type:"string"}
+                translation_z = "0:(10)",  # @param {type:"string"}
+                rotation_3d_x = "0:(0)",  # @param {type:"string"}
+                rotation_3d_y = "0:(0)",  # @param {type:"string"}
+                rotation_3d_z = "0:(0)",  # @param {type:"string"}
+                flip_2d_perspective = False,  # @param {type:"boolean"}
+                perspective_flip_theta = "0:(0)",  # @param {type:"string"}
+                perspective_flip_phi = "0:(t%15)",  # @param {type:"string"}
+                perspective_flip_gamma = "0:(0)",  # @param {type:"string"}
+                perspective_flip_fv = "0:(53)",  # @param {type:"string"}
+                noise_schedule = "0: (0.02)",  # @param {type:"string"}
+                strength_schedule = "0: (0.65)",  # @param {type:"string"}
+                contrast_schedule = "0: (1.0)", # @param {type:"string"}
+                # @markdown ####**Coherence:**
+                color_coherence = 'Match Frame 0 LAB',  # @param ['None', 'Match Frame 0 HSV', 'Match Frame 0 LAB', 'Match Frame 0 RGB'] {type:'string'}
+                diffusion_cadence = '1',  # @param ['1','2','3','4','5','6','7','8'] {type:'string'}
+                # @markdown ####**3D Depth Warping:**
+                use_depth_warping = True,  # @param {type:"boolean"}
+                midas_weight = 0.3, # @param {type:"number"}
+                near_plane = 200,
+                far_plane = 10000,
+                fov = 40,  # @param {type:"number"}
+                padding_mode = 'border',  # @param ['border', 'reflection', 'zeros'] {type:'string'}
+                sampling_mode = 'bicubic',  # @param ['bicubic', 'bilinear', 'nearest'] {type:'string'}
+                save_depth_maps = False,  # @param {type:"boolean"}
 
-    # @markdown ####**Interpolation:**
-    interpolate_key_frames = False  # @param {type:"boolean"}
-    interpolate_x_frames = 4  # @param {type:"number"}
+                # @markdown ####**Video Input:**
+                video_init_path = '/content/video_in.mp4',  # @param {type:"string"}
+                extract_nth_frame = 1,  # @param {type:"number"}
+                overwrite_extracted_frames = True,  # @param {type:"boolean"}
+                use_mask_video = False, # @param {type:"boolean"}
+                video_mask_path = '/content/video_in.mp4',  # @param {type:"string"}
 
-    # @markdown ####**Resume Animation:**
-    resume_from_timestring = False  # @param {type:"boolean"}
-    resume_timestring = "20220829210106"  # @param {type:"string"}
+                # @markdown ####**Interpolation:**
+                interpolate_key_frames = False,  # @param {type:"boolean"}
+                interpolate_x_frames = 4,  # @param {type:"number"}
 
-    def __init__(self, gs, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+                # @markdown ####**Resume Animation:**
+                resume_from_timestring = False,  # @param {type:"boolean"}
+                resume_timestring = "20220829210106",  # @param {type:"string"}
+                *args,
+                **kwargs
+                ):
 
-        #self.gr = Generate(
-        #                   weights     = 'models/sd-v1-4.ckpt',
-        #                   config     = 'configs/stable-diffusion/v1-inference.yaml',
-        #                   gs = gs,
-        #)
+        #super().__init__(*args, **kwargs)
+
         self.gs = gs
-        #self.render_animation()
-        #print(locals())
+        self.prompts = prompts
+        self.animation_prompts = animation_prompts
+        self.H = H
+        self.W = W
+        self.seed = seed
+        self.sampler = sampler
+        self.steps = steps
+        self.scale = scale
+        self.ddim_eta = ddim_eta
+        self.dynamic_threshold = dynamic_threshold
+        self.static_threshold = static_threshold
+        # @markdown **Save & Display Settings**
+        self.save_samples = save_samples
+        self.save_settings = save_settings
+        self.display_samples = display_samples
+        self.save_sample_per_step = save_sample_per_step
+        self.show_sample_per_step = show_sample_per_step
+        self.prompt_weighting = prompt_weighting
+        self.normalize_prompt_weights = normalize_prompt_weights
+        self.log_weighted_subprompts = log_weighted_subprompts
+
+        self.n_batch = n_batch
+        self.batch_name = batch_name
+        self.filename_format = filename_format
+        self.seed_behavior = seed_behavior
+        self.make_grid = make_grid
+        self.grid_rows = grid_rows
+        self.outdir = outdir
+        self.use_init = use_init
+        self.strength = strength
+        self.strength_0_no_init = strength_0_no_init
+        self.init_image = init_image
+        self.use_mask = use_mask
+        self.use_alpha_as_mask = use_alpha_as_mask
+        self.mask_file = mask_file
+        self.invert_mask = invert_mask
+        # Adjust mask image, 1.0 is no adjustment. Should be positive numbers.
+        self.mask_brightness_adjust = mask_brightness_adjust
+        self.mask_contrast_adjust = mask_contrast_adjust
+        # Overlay the masked image at the end of the generation so it does not get degraded by encoding and decoding
+        self.overlay_mask = overlay_mask
+        # Blur edges of final overlay mask, if used. Minimum = 0 (no blur)
+        self.mask_overlay_blur = mask_overlay_blur
+
+        self.n_samples = n_samples
+        self.precision = precision
+        self.C = C
+        self.f = f
+
+        self.prompt = prompt
+        self.timestring = timestring
+        self.init_latent = init_latent
+        self.init_sample = init_sample
+        self.init_c = init_c
+
+        # Anim Args
+
+        self.animation_mode = animation_mode
+        self.max_frames = max_frames
+        self.border = border
+        # @markdown ####**Motion Parameters:**
+        self.angle = angle
+        self.zoom = zoom
+        self.translation_x = translation_x
+        self.translation_y = translation_y
+        self.translation_z = translation_z
+        self.rotation_3d_x = rotation_3d_x
+        self.rotation_3d_y = rotation_3d_y
+        self.rotation_3d_z = rotation_3d_z
+        self.flip_2d_perspective = flip_2d_perspective
+        self.perspective_flip_theta = perspective_flip_theta
+        self.perspective_flip_phi = perspective_flip_phi
+        self.perspective_flip_gamma = perspective_flip_gamma
+        self.perspective_flip_fv = perspective_flip_fv
+        self.noise_schedule = noise_schedule
+        self.strength_schedule = strength_schedule
+        self.contrast_schedule = contrast_schedule
+        # @markdown ####**Coherence:**
+        self.color_coherence = color_coherence
+        self.diffusion_cadence = diffusion_cadence
+        # @markdown ####**3D Depth Warping:**
+        self.use_depth_warping = use_depth_warping
+        self.midas_weight = midas_weight
+        self.near_plane = near_plane
+        self.far_plane = far_plane
+        self.fov = fov
+        self.padding_mode = padding_mode
+        self.sampling_mode = sampling_mode
+        self.save_depth_maps = save_depth_maps
+
+        # @markdown ####**Video Input:**
+        self.video_init_path = video_init_path
+        self.extract_nth_frame = extract_nth_frame
+        self.overwrite_extracted_frames = overwrite_extracted_frames
+        self.use_mask_video = use_mask_video
+        self.video_mask_path = video_mask_path
+
+        # @markdown ####**Interpolation:**
+        self.interpolate_key_frames = interpolate_key_frames
+        self.interpolate_x_frames = interpolate_x_frames
+
+        # @markdown ####**Resume Animation:**
+        self.resume_from_timestring = resume_from_timestring
+        self.resume_timestring = resume_timestring
+
+
+
     def torch_gc(self):
         gc.collect()
         torch.cuda.empty_cache()
@@ -220,86 +307,216 @@ class DeforumGenerator():
                     m._orig_padding_mode = m.padding_mode
 
         return
+    def animkeys(self):
+        self.angle_series = get_inbetweens(parse_key_frames(self.angle), self.max_frames)
+        self.zoom_series = get_inbetweens(parse_key_frames(self.zoom), self.max_frames)
+        self.translation_x_series = get_inbetweens(parse_key_frames(self.translation_x), self.max_frames)
+        self.translation_y_series = get_inbetweens(parse_key_frames(self.translation_y), self.max_frames)
+        self.translation_z_series = get_inbetweens(parse_key_frames(self.translation_z), self.max_frames)
+        self.rotation_3d_x_series = get_inbetweens(parse_key_frames(self.rotation_3d_x), self.max_frames)
+        self.rotation_3d_y_series = get_inbetweens(parse_key_frames(self.rotation_3d_y), self.max_frames)
+        self.rotation_3d_z_series = get_inbetweens(parse_key_frames(self.rotation_3d_z), self.max_frames)
+        self.perspective_flip_theta_series = get_inbetweens(parse_key_frames(self.perspective_flip_theta), self.max_frames)
+        self.perspective_flip_phi_series = get_inbetweens(parse_key_frames(self.perspective_flip_phi), self.max_frames)
+        self.perspective_flip_gamma_series = get_inbetweens(parse_key_frames(self.perspective_flip_gamma), self.max_frames)
+        self.perspective_flip_fv_series = get_inbetweens(parse_key_frames(self.perspective_flip_fv), self.max_frames)
+        self.noise_schedule_series = get_inbetweens(parse_key_frames(self.noise_schedule), self.max_frames)
+        self.strength_schedule_series = get_inbetweens(parse_key_frames(self.strength_schedule), self.max_frames)
+        self.contrast_schedule_series = get_inbetweens(parse_key_frames(self.contrast_schedule), self.max_frames)
 
-    def render_animation(self):
+
+    def render_animation(self,
+                         image_callback = None,
+                         step_callback = None,
+
+                         prompts = "a beautiful forest by Asher Brown Durand, trending on Artstation",
+                         animation_prompts = 'test',
+                         H = 512,
+                         W = 512,
+                         seed = -1,  # @param
+                         sampler = 'klms',  # @param ["klms","dpm2","dpm2_ancestral","heun","euler","euler_ancestral","plms", "ddim"]
+                         steps = 20,  # @param
+                         scale = 7,  # @param
+                         ddim_eta = 0.0,  # @param
+                         dynamic_threshold = None,
+                         static_threshold = None,
+                         # @markdown **Save & Display Settings**
+                         save_samples = True, # @param {type:"boolean"}
+                         save_settings = True,  # @param {type:"boolean"}
+                         display_samples = True,  # @param {type:"boolean"}
+                         save_sample_per_step = False,  # @param {type:"boolean"}
+                         show_sample_per_step = False,  # @param {type:"boolean"}
+                         prompt_weighting = False,  # @param {type:"boolean"}
+                         normalize_prompt_weights = True,  # @param {type:"boolean"}
+                         log_weighted_subprompts = False,  # @param {type:"boolean"}
+
+                         n_batch = 1,  # @param
+                         batch_name = "StableFun",  # @param {type:"string"}
+                         filename_format = "{timestring}_{index}_{prompt}.png",  # @param ["{timestring}_{index}_{seed}.png","{timestring}_{index}_{prompt}.png"]
+                         seed_behavior = "iter",  # @param ["iter","fixed","random"]
+                         make_grid = False,  # @param {type:"boolean"}
+                         grid_rows = 2,  # @param
+                         outdir = "output",
+                         use_init = False,  # @param {type:"boolean"}
+                         strength = 0.0,  # @param {type:"number"}
+                         strength_0_no_init = True,  # Set the strength to 0 automatically when no init image is used
+                         init_image = "",  # @param {type:"string"}
+                         # Whiter areas of the mask are areas that change more
+                         use_mask = False,  # @param {type:"boolean"}
+                         use_alpha_as_mask = False,  # use the alpha channel of the init image as the mask
+                         mask_file = "",  # @param {type:"string"}
+                         invert_mask = False, # @param {type:"boolean"}
+                         # Adjust mask image, 1.0 is no adjustment. Should be positive numbers.
+                         mask_brightness_adjust = 1.0,  # @param {type:"number"}
+                         mask_contrast_adjust = 1.0,  # @param {type:"number"}
+                         # Overlay the masked image at the end of the generation so it does not get degraded by encoding and decoding
+                         overlay_mask = True,  # {type:"boolean"}
+                         # Blur edges of final overlay mask, if used. Minimum = 0 (no blur)
+                         mask_overlay_blur = 5,  # {type:"number"}
+
+                         n_samples = 1, # doesnt do anything
+                         precision = 'autocast',
+                         C = 4,
+                         f = 8,
+
+                         prompt = "",
+                         timestring = "",
+                         init_latent = None,
+                         init_sample = None,
+                         init_c = None,
+
+                         # Anim Args
+
+                         animation_mode = '3D',  # @param ['None', '2D', '3D', 'Video Input', 'Interpolation'] {type:'string'}
+                         max_frames = 10, # @Dparam {type:"number"}
+                         border = 'replicate',  # @param ['wrap', 'replicate'] {type:'string'}
+                         angle = "0:(0)", # @param {type:"string"}
+                         zoom = "0:(1.04)",  # @param {type:"string"}
+                         translation_x = "0:(10*sin(2*3.14*t/10))",  # @param {type:"string"}
+                         translation_y = "0:(0)",  # @param {type:"string"}
+                         translation_z = "0:(10)",  # @param {type:"string"}
+                         rotation_3d_x = "0:(0)",  # @param {type:"string"}
+                         rotation_3d_y = "0:(0)",  # @param {type:"string"}
+                         rotation_3d_z = "0:(0)",  # @param {type:"string"}
+                         flip_2d_perspective = False,  # @param {type:"boolean"}
+                         perspective_flip_theta = "0:(0)",  # @param {type:"string"}
+                         perspective_flip_phi = "0:(t%15)",  # @param {type:"string"}
+                         perspective_flip_gamma = "0:(0)",  # @param {type:"string"}
+                         perspective_flip_fv = "0:(53)",  # @param {type:"string"}
+                         noise_schedule = "0: (0.02)",  # @param {type:"string"}
+                         strength_schedule = "0: (0.65)",  # @param {type:"string"}
+                         contrast_schedule = "0: (1.0)", # @param {type:"string"}
+                         # @markdown ####**Coherence:**
+                         color_coherence = 'Match Frame 0 LAB',  # @param ['None', 'Match Frame 0 HSV', 'Match Frame 0 LAB', 'Match Frame 0 RGB'] {type:'string'}
+                         diffusion_cadence = '1',  # @param ['1','2','3','4','5','6','7','8'] {type:'string'}
+                         # @markdown ####**3D Depth Warping:**
+                         use_depth_warping = True,  # @param {type:"boolean"}
+                         midas_weight = 0.3, # @param {type:"number"}
+                         near_plane = 200,
+                         far_plane = 10000,
+                         fov = 40,  # @param {type:"number"}
+                         padding_mode = 'border',  # @param ['border', 'reflection', 'zeros'] {type:'string'}
+                         sampling_mode = 'bicubic',  # @param ['bicubic', 'bilinear', 'nearest'] {type:'string'}
+                         save_depth_maps = False,  # @param {type:"boolean"}
+
+                         # @markdown ####**Video Input:**
+                         video_init_path = '/content/video_in.mp4',  # @param {type:"string"}
+                         extract_nth_frame = 1,  # @param {type:"number"}
+                         overwrite_extracted_frames = True,  # @param {type:"boolean"}
+                         use_mask_video = False, # @param {type:"boolean"}
+                         video_mask_path = '/content/video_in.mp4',  # @param {type:"string"}
+
+                         # @markdown ####**Interpolation:**
+                         interpolate_key_frames = False,  # @param {type:"boolean"}
+                         interpolate_x_frames = 4,  # @param {type:"number"}
+
+                         # @markdown ####**Resume Animation:**
+                         resume_from_timestring = False,  # @param {type:"boolean"}
+                         resume_timestring = "20220829210106",  # @param {type:"string"}
+                         *args,
+                         **kwargs):
         if "sd" not in self.gs.models:
             self.load_model()
 
         # animations use key framed prompts
-        self.prompts = self.animation_prompts
+        #prompts = animation_prompts
 
         # expand key frame strings to values
         keys = DeformAnimKeys(self)
 
         # resume animation
         start_frame = 0
-        if self.resume_from_timestring:
-            for tmp in os.listdir(self.outdir):
-                if tmp.split("_")[0] == self.resume_timestring:
+        if resume_from_timestring:
+            for tmp in os.listdir(outdir):
+                if tmp.split("_")[0] == resume_timestring:
                     start_frame += 1
             start_frame = start_frame - 1
 
         # create output folder for the batch
-        os.makedirs(self.outdir, exist_ok=True)
-        print(f"Saving animation frames to {self.outdir}")
+        os.makedirs(outdir, exist_ok=True)
+        print(f"Saving animation frames to {outdir}")
 
         # save settings for the batch
-        #settings_filename = os.path.join(self.outdir, f"{self.timestring}_settings.txt")
+        #settings_filename = os.path.join(outdir, f"{timestring}_settings.txt")
         #with open(settings_filename, "w+", encoding="utf-8") as f:
-        #    s = {**dict(self.__dict__), **dict(self.__dict__)}
+        #    s = {**dict(__dict__), **dict(__dict__)}
         #    json.dump(s, f, ensure_ascii=False, indent=4)
 
         # resume from timestring
-        if self.resume_from_timestring:
-            self.timestring = self.resume_timestring
+        if resume_from_timestring:
+            timestring = resume_timestring
 
         # expand prompts out to per-frame
-        prompt_series = pd.Series([np.nan for a in range(self.max_frames)])
-        for i, prompt in self.animation_prompts.items():
-            prompt_series[i] = prompt
-        prompt_series = prompt_series.ffill().bfill()
+        #prompt_series = pd.Series([np.nan for a in range(max_frames)])
+        #for i, prompt in animation_prompts.items():
+        #    prompt_series[i] = prompt
+        prompt_series = animation_prompts
+
+        print("we should see 5")
+        print(prompt_series)
 
         # check for video inits
-        using_vid_init = self.animation_mode == 'Video Input'
+        using_vid_init = animation_mode == 'Video Input'
 
         # load depth model for 3D
-        predict_depths = (self.animation_mode == '3D' and self.use_depth_warping) or self.save_depth_maps
+        predict_depths = (animation_mode == '3D' and use_depth_warping) or save_depth_maps
         if predict_depths:
-            depth_model = DepthModel('cuda')
-            depth_model.load_midas('models/')
-            if self.midas_weight < 1.0:
-                depth_model.load_adabins()
+            if "depth_model" not in self.gs.models:
+                depth_model = DepthModel(self.gs, 'cuda')
+                depth_model.load_midas('models/')
+                if midas_weight < 1.0:
+                    depth_model.load_adabins()
         else:
             depth_model = None
-            self.save_depth_maps = False
+            save_depth_maps = False
 
         # state for interpolating between diffusion steps
-        turbo_steps = 1 if using_vid_init else int(self.diffusion_cadence)
+        turbo_steps = 1 if using_vid_init else int(diffusion_cadence)
         turbo_prev_image, turbo_prev_frame_idx = None, 0
         turbo_next_image, turbo_next_frame_idx = None, 0
 
         # resume animation
         prev_sample = None
         color_match_sample = None
-        if self.resume_from_timestring:
+        if resume_from_timestring:
             last_frame = start_frame - 1
             if turbo_steps > 1:
                 last_frame -= last_frame % turbo_steps
-            path = os.path.join(self.outdir, f"{self.timestring}_{last_frame:05}.png")
+            path = os.path.join(outdir, f"{timestring}_{last_frame:05}.png")
             img = cv2.imread(path)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             prev_sample = sample_from_cv2(img)
-            if self.color_coherence != 'None':
+            if color_coherence != 'None':
                 color_match_sample = img
             if turbo_steps > 1:
                 turbo_next_image, turbo_next_frame_idx = sample_to_cv2(prev_sample, type=np.float32), last_frame
                 turbo_prev_image, turbo_prev_frame_idx = turbo_next_image, turbo_next_frame_idx
                 start_frame = last_frame + turbo_steps
 
-        self.n_samples = 1
+        n_samples = 1
         frame_idx = start_frame
-        while frame_idx < self.max_frames:
-            print(f"Rendering animation frame {frame_idx} of {self.max_frames}")
+        while frame_idx < max_frames:
+            print(f"Rendering animation frame {frame_idx} of {max_frames}")
             noise = keys.noise_schedule_series[frame_idx]
             strength = keys.strength_schedule_series[frame_idx]
             contrast = keys.contrast_schedule_series[frame_idx]
@@ -320,11 +537,11 @@ class DeforumGenerator():
                         assert (turbo_next_image is not None)
                         depth = depth_model.predict(turbo_next_image, self)
 
-                    if self.animation_mode == '2D':
+                    if animation_mode == '2D':
                         if advance_prev:
-                            turbo_prev_image = anim_frame_warp_2d(turbo_prev_image, keys, tween_frame_idx, self.W, self.H, self.flip_2d_perspective, self.border)
+                            turbo_prev_image = anim_frame_warp_2d(turbo_prev_image, keys, tween_frame_idx, W, H, flip_2d_perspective, border)
                         if advance_next:
-                            turbo_next_image = anim_frame_warp_2d(turbo_next_image, keys, tween_frame_idx, self.W, self.H, self.flip_2d_perspective, self.border)
+                            turbo_next_image = anim_frame_warp_2d(turbo_next_image, keys, tween_frame_idx, W, H, flip_2d_perspective, border)
                     else:  # '3D'
                         if advance_prev:
                             turbo_prev_image = anim_frame_warp_3d(turbo_prev_image, depth, self, keys, tween_frame_idx)
@@ -337,33 +554,31 @@ class DeforumGenerator():
                     else:
                         img = turbo_next_image
 
-                    filename = f"{self.timestring}_{tween_frame_idx:05}.png"
-                    cv2.imwrite(os.path.join(self.outdir, filename),
+                    filename = f"{timestring}_{tween_frame_idx:05}.png"
+                    cv2.imwrite(os.path.join(outdir, filename),
                                 cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2BGR))
-                    if self.save_depth_maps:
-                        depth_model.save(os.path.join(self.outdir, f"{self.timestring}_depth_{tween_frame_idx:05}.png"),
+                    if save_depth_maps:
+                        depth_model.save(os.path.join(outdir, f"{timestring}_depth_{tween_frame_idx:05}.png"),
                                          depth)
                 if turbo_next_image is not None:
                     prev_sample = sample_from_cv2(turbo_next_image)
 
             # apply transforms to previous frame
             if prev_sample is not None:
-                if self.animation_mode == '2D':
-                    prev_img = anim_frame_warp_2d(sample_to_cv2(prev_sample), keys, frame_idx, self.W, self.H, self.flip_2d_perspective, self.border)
+                if animation_mode == '2D':
+                    prev_img = anim_frame_warp_2d(sample_to_cv2(prev_sample), keys, frame_idx, W, H, flip_2d_perspective, border)
                 else:  # '3D'
                     prev_img_cv2 = sample_to_cv2(prev_sample)
-                    depth = depth_model.predict(prev_img_cv2, self.midas_weight) if depth_model else None
-                    print(prev_img_cv2, depth, keys, frame_idx, self.near_plane, self.far_plane, self.fov,
-                          self.sampling_mode, self.padding_mode)
-                    prev_img = anim_frame_warp_3d(prev_img_cv2, depth, keys, frame_idx, self.near_plane, self.far_plane,
-                                                  self.fov, self.sampling_mode, self.padding_mode)
+                    depth = depth_model.predict(prev_img_cv2, midas_weight) if depth_model else None
+                    prev_img = anim_frame_warp_3d(prev_img_cv2, depth, keys, frame_idx, near_plane, far_plane,
+                                                  fov, sampling_mode, padding_mode)
 
                 # apply color matching
-                if self.color_coherence != 'None':
+                if color_coherence != 'None':
                     if color_match_sample is None:
                         color_match_sample = prev_img.copy()
                     else:
-                        prev_img = maintain_colors(prev_img, color_match_sample, self.color_coherence)
+                        prev_img = maintain_colors(prev_img, color_match_sample, color_coherence)
 
                 # apply scaling
                 contrast_sample = prev_img * contrast
@@ -380,8 +595,8 @@ class DeforumGenerator():
                 self.strength = max(0.0, min(1.0, strength))
 
             # grab prompt for current frame
-            self.prompt = prompt_series[frame_idx]
-            print(f"{self.prompt} {self.seed}")
+            prompt = prompt_series[frame_idx]
+            print(f"{prompt} {seed}")
             if not using_vid_init:
                 print(f"Angle: {keys.angle_series[frame_idx]} Zoom: {keys.zoom_series[frame_idx]}")
                 print(
@@ -391,15 +606,19 @@ class DeforumGenerator():
 
             # grab init image for current frame
             if using_vid_init:
-                init_frame = os.path.join(self.outdir, 'inputframes', f"{frame_idx + 1:05}.jpg")
+                init_frame = os.path.join(outdir, 'inputframes', f"{frame_idx + 1:05}.jpg")
                 print(f"Using video init frame {init_frame}")
                 self.init_image = init_frame
-                if self.use_mask_video:
-                    mask_frame = os.path.join(self.outdir, 'maskframes', f"{frame_idx + 1:05}.jpg")
+                if use_mask_video:
+                    mask_frame = os.path.join(outdir, 'maskframes', f"{frame_idx + 1:05}.jpg")
                     self.mask_file = mask_frame
 
             # sample the diffusion model
             sample, image = self.generate(frame_idx, return_latent=False, return_sample=True)
+            if image_callback is not None:
+                image_callback(image, seed, upscaled=False)
+
+
             if not using_vid_init:
                 prev_sample = sample
 
@@ -408,18 +627,18 @@ class DeforumGenerator():
                 turbo_next_image, turbo_next_frame_idx = sample_to_cv2(sample, type=np.float32), frame_idx
                 frame_idx += turbo_steps
             else:
-                filename = f"{self.timestring}_{frame_idx:05}.png"
-                image.save(os.path.join(self.outdir, filename))
-                if self.save_depth_maps:
+                filename = f"{timestring}_{frame_idx:05}.png"
+                image.save(os.path.join(outdir, filename))
+                if save_depth_maps:
                     if depth is None:
                         depth = depth_model.predict(sample_to_cv2(sample), self)
-                    depth_model.save(os.path.join(self.outdir, f"{self.timestring}_depth_{frame_idx:05}.png"), depth)
+                    depth_model.save(os.path.join(outdir, f"{timestring}_depth_{frame_idx:05}.png"), depth)
                 frame_idx += 1
 
             # display.clear_output(wait=True)
             # display.display(image)
 
-            self.seed = next_seed(self)
+            seed = next_seed(self)
         try:
             del depth_model
         except:
@@ -427,6 +646,7 @@ class DeforumGenerator():
         self.torch_gc()
 
     def generate(self, frame=0, return_latent=False, return_sample=False, return_c=False):
+
         seed_everything(self.seed)
         os.makedirs(self.outdir, exist_ok=True)
 
@@ -459,8 +679,6 @@ class DeforumGenerator():
                 init_latent = self.gs.models["sd"].get_first_stage_encoding(
                     self.gs.models["sd"].encode_first_stage(init_image))  # move to latent space
         self.init_latent = init_latent
-        print(type(init_latent))
-        print(type(self.init_latent))
         if not self.use_init and self.strength > 0 and self.strength_0_no_init:
             print("\nNo init image, but strength > 0. Strength has been auto set to 0, since use_init is False.")
             print("If you want to force strength > 0 with no init, please set strength_0_no_init to False.\n")

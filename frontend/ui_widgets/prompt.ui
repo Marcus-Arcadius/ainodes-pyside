@@ -70,6 +70,16 @@
         <number>0</number>
        </property>
        <item>
+        <widget class="QTextEdit" name="keyFrames">
+         <property name="maximumSize">
+          <size>
+           <width>100</width>
+           <height>16777215</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QTextEdit" name="textEdit"/>
        </item>
        <item>

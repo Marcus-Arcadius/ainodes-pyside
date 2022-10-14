@@ -17,7 +17,8 @@ def wget(url, outputdir):
 
 
 class DepthModel():
-    def __init__(self, device):
+    def __init__(self, gs, device):
+        self.gs = gs
         self.adabins_helper = None
         self.depth_min = 1000
         self.depth_max = -1000
@@ -37,32 +38,32 @@ class DepthModel():
         if not os.path.exists(os.path.join(models_path, 'dpt_large-midas-2f21e586.pt')):
             print("Downloading dpt_large-midas-2f21e586.pt...")
             wget("https://github.com/intel-isl/DPT/releases/download/1_0/dpt_large-midas-2f21e586.pt", models_path)
+        if "midas_model" not in self.gs.models:
+            self.gs.models["midas_model"] = DPTDepthModel(
+                path=f"{models_path}/dpt_large-midas-2f21e586.pt",
+                backbone="vitl16_384",
+                non_negative=True,
+            )
+            normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
-        self.midas_model = DPTDepthModel(
-            path=f"{models_path}/dpt_large-midas-2f21e586.pt",
-            backbone="vitl16_384",
-            non_negative=True,
-        )
-        normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+            self.midas_transform = T.Compose([
+                Resize(
+                    384, 384,
+                    resize_target=None,
+                    keep_aspect_ratio=True,
+                    ensure_multiple_of=32,
+                    resize_method="minimal",
+                    image_interpolation_method=cv2.INTER_CUBIC,
+                ),
+                normalization,
+                PrepareForNet()
+            ])
 
-        self.midas_transform = T.Compose([
-            Resize(
-                384, 384,
-                resize_target=None,
-                keep_aspect_ratio=True,
-                ensure_multiple_of=32,
-                resize_method="minimal",
-                image_interpolation_method=cv2.INTER_CUBIC,
-            ),
-            normalization,
-            PrepareForNet()
-        ])
-
-        self.midas_model.eval()    
-        if half_precision and self.device == torch.device("cuda"):
-            self.midas_model = self.midas_model.to(memory_format=torch.channels_last)
-            self.midas_model = self.midas_model.half()
-        self.midas_model.to(self.device)
+            self.gs.models["midas_model"].eval()
+            if half_precision and self.device == torch.device("cuda"):
+                self.gs.models["midas_model"] = self.gs.models["midas_model"].to(memory_format=torch.channels_last)
+                self.gs.models["midas_model"] = self.gs.models["midas_model"].half()
+            self.gs.models["midas_model"].to(self.device)
 
     def predict(self, prev_img_cv2, midas_weight) -> torch.Tensor:
         w, h = prev_img_cv2.shape[1], prev_img_cv2.shape[0]
@@ -105,7 +106,7 @@ class DepthModel():
                 use_adabins = False
             torch.cuda.empty_cache()
 
-        if self.midas_model is not None:
+        if self.gs.models["midas_model"] is not None:
             # convert image from 0->255 uint8 to 0->1 float for feeding to MiDaS
             img_midas = prev_img_cv2.astype(np.float32) / 255.0
             img_midas_input = self.midas_transform({"image": img_midas})["image"]
@@ -116,7 +117,7 @@ class DepthModel():
                 sample = sample.to(memory_format=torch.channels_last)  
                 sample = sample.half()
             with torch.no_grad():            
-                midas_depth = self.midas_model.forward(sample)
+                midas_depth = self.gs.models["midas_model"].forward(sample)
             midas_depth = torch.nn.functional.interpolate(
                 midas_depth.unsqueeze(1),
                 size=img_midas.shape[:2],

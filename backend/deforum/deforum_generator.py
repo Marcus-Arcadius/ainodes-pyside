@@ -1026,6 +1026,8 @@ def DeforumAnimArgs():
 
 class DeformAnimKeys():
     def __init__(self, anim_args):
+        print(anim_args.max_frames)
+        print(anim_args.angle)
         self.angle_series = get_inbetweens(parse_key_frames(anim_args.angle), anim_args.max_frames)
         self.zoom_series = get_inbetweens(parse_key_frames(anim_args.zoom), anim_args.max_frames)
         self.translation_x_series = get_inbetweens(parse_key_frames(anim_args.translation_x), anim_args.max_frames)
