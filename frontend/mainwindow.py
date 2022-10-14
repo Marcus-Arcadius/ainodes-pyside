@@ -405,9 +405,15 @@ class GenerateWindow(QObject):
         prompt_series = prompt_series.ffill().bfill()
 
         #print(prompt_series)
+        show_sample_per_step = True
+        self.progress = 0.0
+        self.update = 0
+        self.steps=self.w.sizer_count.w.stepsSlider.value()
 
-
-        self.deforum.render_animation(  adabins = adabins,
+        self.onePercent = 100 / (1 * self.steps * max_frames * max_frames)
+        self.updateRate = self.w.sizer_count.w.previewSlider.value()
+        self.deforum.render_animation(  steps=self.steps,
+                                        adabins = adabins,
                                         scale = scale,
                                         ddim_eta = ddim_eta,
                                         strength = strength,
@@ -424,7 +430,31 @@ class GenerateWindow(QObject):
                                         use_init = use_init,
                                         clear_latent = clearLatent,
                                         clear_sample = clearSample,
+                                        step_callback = self.deforum_step_cb,
+                                        show_sample_per_step=show_sample_per_step,
+
                                         )
+    def deforum_step_cb(self, data, *args, **kwargs):
+        print(data.keys())
+        print(type(data['x']))
+        print(type(data['i']))
+        print(type(data['sigma']))
+        print(type(data['sigma_hat']))
+        print(type(data['denoised']))
+
+        self.updateRate = self.w.sizer_count.w.previewSlider.value()
+
+
+        self.progress = self.progress + self.onePercent
+        self.w.progressBar.setValue(self.progress)
+        # Pass the function to execute
+        self.liveWorker2 = Worker(self.liveUpdate(data['denoised'], data['i']))
+
+        #with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        #    self.liveUpdate(data1, data2)
+
+        self.threadpool.start(self.liveWorker2)
+
     def run_txt2img(self, progress_callback=None):
 
         self.w.statusBar().showMessage("Loading model...")
@@ -635,7 +665,7 @@ class GenerateWindow(QObject):
 
         #progress bar test:
         #self.progress_thread()
-    def testThread(self, data1, data2):
+    def testThread(self, data1=None, data2=None):
 
 
         self.updateRate = self.w.sizer_count.w.previewSlider.value()
@@ -651,7 +681,7 @@ class GenerateWindow(QObject):
 
         self.threadpool.start(self.liveWorker2)
 
-    def liveUpdate(self, data1, data2):
+    def liveUpdate(self, data1=None, data2=None):
         self.w.statusBar().showMessage(f"Generating... (step {data2} of {self.steps})")
 
         if self.update >= self.updateRate:
@@ -700,9 +730,9 @@ class GenerateWindow(QObject):
 
                 #self.vpainter[tins].begin(self.tpixmap)
                 #self.vpainter[tins].device()
-                self.dqimg = ImageQt(dPILimg)
+                dqimg = ImageQt(dPILimg)
                 #self.qimage[tins] = ImageQt(dPILimg)
-                self.livePainter.drawImage(QRect(0, 0, 512, 512), self.dqimg)
+                self.livePainter.drawImage(QRect(0, 0, 512, 512), dqimg)
                 self.w.dynaview.w.label.setPixmap(self.tpixmap.scaled(512, 512, Qt.AspectRatioMode.KeepAspectRatio))
                 #self.w.dynaview.w.label.setPixmap(self.tpixmap[tins].scaled(512, 512, Qt.AspectRatioMode.IgnoreAspectRatio))
                 #self.vpainter[tins].end()
@@ -711,7 +741,7 @@ class GenerateWindow(QObject):
 
                 #dqimg = ImageQt(dPILimg)
                 #qimg = QPixmap.fromImage(dqimg)
-
+                self.livePainter.end()
                 #self.vpainter[tins].end()
 
 
@@ -725,35 +755,35 @@ class GenerateWindow(QObject):
     def pass_object(self, progress_callback=None):
         pass
     def image_cb(self, image, seed=None, upscaled=False, use_prefix=None, first_seed=None):
-        #with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-
-        try:
-
-            #gs.callbackBusy = True
-            #dimg = ImageQt(image)
-            #dpixmap = QPixmap(QPixmap.fromImage(dimg))
-            #iins = random.randint(10000, 99999)
-            #dpixmap = QPixmap(512, 512)
-
-            #self.vpainter[iins].device()
-
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
 
             try:
-                self.vpainter["iins"].begin(self.ipixmap)
+
+                #gs.callbackBusy = True
+                #dimg = ImageQt(image)
+                #dpixmap = QPixmap(QPixmap.fromImage(dimg))
+                #iins = random.randint(10000, 99999)
+                #dpixmap = QPixmap(512, 512)
+
+                #self.vpainter[iins].device()
+
+
+                try:
+                    self.vpainter["iins"].begin(self.ipixmap)
+                except:
+                    pass
+                qimage = ImageQt(image)
+                self.vpainter["iins"].drawImage(QRect(0, 0, 512, 512), qimage)
+
+
+
+                self.w.dynaimage.w.label.setPixmap(self.ipixmap.scaled(512, 512, Qt.AspectRatioMode.KeepAspectRatio))
+                #self.vpainter["iins"].end()
+                #gs.callbackBusy = False
+                #self.w.dynaimage.w.label.update()
+                self.vpainter["iins"].end()
             except:
                 pass
-            qimage = ImageQt(image)
-            self.vpainter["iins"].drawImage(QRect(0, 0, 512, 512), qimage)
-
-
-
-            self.w.dynaimage.w.label.setPixmap(self.ipixmap.scaled(512, 512, Qt.AspectRatioMode.KeepAspectRatio))
-            #self.vpainter["iins"].end()
-            #gs.callbackBusy = False
-            #self.w.dynaimage.w.label.update()
-            #self.vpainter["iins"].end()
-        except:
-            pass
 
     def get_pic(self, clear=False): #from self.image_path
         #for item in self.w.preview.w.scene.items():

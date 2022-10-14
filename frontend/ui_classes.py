@@ -539,8 +539,8 @@ class OurTimeline(QWidget):
 
 
 
-        self.pos = e.pos()
-        self.checkEdges(e.pos().x())
+        self.pos = e.globalPosition()
+        self.checkEdges(e.globalPosition().x())
         #print(f'mouseMove func: {self.edgeGrab}')
         # if mouse is being pressed, update pointer
         if self.clicking:

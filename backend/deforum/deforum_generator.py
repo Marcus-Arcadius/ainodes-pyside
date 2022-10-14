@@ -230,6 +230,7 @@ def anim_frame_warp_2d(prev_img_cv2, keys, frame_idx, W, H, flip_2d_perspective,
     )
 
 def anim_frame_warp_3d(prev_img_cv2, depth, keys, frame_idx, near_plane, far_plane, fov, sampling_mode, padding_mode):
+    print(f"firing with {keys.translation_x_series[frame_idx]}, {keys.translation_y_series[frame_idx]}, {-keys.translation_z_series[frame_idx]}")
     TRANSLATION_SCALE = 1.0/200.0 # matches Disco
     translate_xyz = [
         -keys.translation_x_series[frame_idx] * TRANSLATION_SCALE,

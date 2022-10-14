@@ -1,6 +1,7 @@
 # InvokeAI Generator import
 import json
 import random
+import re
 import sys
 import time
 import traceback
@@ -20,7 +21,7 @@ from backend.deforum import DepthModel, sampler_fn
 
 from backend.deforum.deforum_generator import prepare_mask, get_uc_and_c, DeformAnimKeys, sample_from_cv2, \
     sample_to_cv2, anim_frame_warp_2d, anim_frame_warp_3d, maintain_colors, add_noise, next_seed, \
-    load_img, get_inbetweens, parse_key_frames
+    load_img, get_inbetweens, parse_key_frames, check_is_number
 from ldm.dream.devices import choose_torch_device
 
 from ldm.generate import Generate
@@ -44,6 +45,123 @@ gs = singleton
 from ldm.util import instantiate_from_config
 
 
+def get_uc_and_c(prompts, model, n_samples, log_weighted_subprompts, normalize_prompt_weights, frame = 0):
+    prompt = prompts[0] # they are the same in a batch anyway
+
+    # get weighted sub-prompts
+    negative_subprompts, positive_subprompts = split_weighted_subprompts(
+        prompt, frame, not normalize_prompt_weights
+    )
+
+    uc = get_learned_conditioning(model, negative_subprompts, "", n_samples, log_weighted_subprompts, -1)
+    c = get_learned_conditioning(model, positive_subprompts, prompt, n_samples, log_weighted_subprompts, 1)
+
+    return (uc, c)
+
+def get_learned_conditioning(model, weighted_subprompts, text, n_samples, log_weighted_subprompts, sign = 1):
+    if len(weighted_subprompts) < 1:
+        log_tokenization(text, model, log_weighted_subprompts, sign)
+        c = model.get_learned_conditioning(n_samples * [text])
+    else:
+        c = None
+        for subtext, subweight in weighted_subprompts:
+            log_tokenization(subtext, model, log_weighted_subprompts, sign * subweight)
+            if c is None:
+                c = model.get_learned_conditioning(n_samples * [subtext])
+                c *= subweight
+            else:
+                c.add_(model.get_learned_conditioning(n_samples * [subtext]), alpha=subweight)
+
+    return c
+def parse_weight(match, frame = 0)->float:
+    import numexpr
+    w_raw = match.group("weight")
+    if w_raw == None:
+        return 1
+    if check_is_number(w_raw):
+        return float(w_raw)
+    else:
+        t = frame
+        if len(w_raw) < 3:
+            print('the value inside `-characters cannot represent a math function')
+            return 1
+        return float(numexpr.evaluate(w_raw[1:-1]))
+
+def normalize_prompt_weights(parsed_prompts):
+    if len(parsed_prompts) == 0:
+        return parsed_prompts
+    weight_sum = sum(map(lambda x: x[1], parsed_prompts))
+    if weight_sum == 0:
+        print(
+            "Warning: Subprompt weights add up to zero. Discarding and using even weights instead.")
+        equal_weight = 1 / max(len(parsed_prompts), 1)
+        return [(x[0], equal_weight) for x in parsed_prompts]
+    return [(x[0], x[1] / weight_sum) for x in parsed_prompts]
+
+def split_weighted_subprompts(text, frame = 0, skip_normalize=False):
+    """
+    grabs all text up to the first occurrence of ':'
+    uses the grabbed text as a sub-prompt, and takes the value following ':' as weight
+    if ':' has no value defined, defaults to 1.0
+    repeats until no text remaining
+    """
+    prompt_parser = re.compile("""
+            (?P<prompt>         # capture group for 'prompt'
+            (?:\\\:|[^:])+      # match one or more non ':' characters or escaped colons '\:'
+            )                   # end 'prompt'
+            (?:                 # non-capture group
+            :+                  # match one or more ':' characters
+            (?P<weight>((        # capture group for 'weight'
+            -?\d+(?:\.\d+)?     # match positive or negative integer or decimal number
+            )|(                 # or
+            `[\S\s]*?`# a math function
+            )))?                 # end weight capture group, make optional
+            \s*                 # strip spaces after weight
+            |                   # OR
+            $                   # else, if no ':' then match end of line
+            )                   # end non-capture group
+            """, re.VERBOSE)
+    negative_prompts = []
+    positive_prompts = []
+    for match in re.finditer(prompt_parser, text):
+        w = parse_weight(match, frame)
+        if w < 0:
+            # negating the sign as we'll feed this to uc
+            negative_prompts.append((match.group("prompt").replace("\\:", ":"), -w))
+        elif w > 0:
+            positive_prompts.append((match.group("prompt").replace("\\:", ":"), w))
+
+    if skip_normalize:
+        return (negative_prompts, positive_prompts)
+    return (normalize_prompt_weights(negative_prompts), normalize_prompt_weights(positive_prompts))
+
+# shows how the prompt is tokenized
+# usually tokens have '</w>' to indicate end-of-word,
+# but for readability it has been replaced with ' '
+def log_tokenization(text, model, log=False, weight=1):
+    if not log:
+        return
+    tokens    = model.cond_stage_model.tokenizer._tokenize(text)
+    tokenized = ""
+    discarded = ""
+    usedTokens = 0
+    totalTokens = len(tokens)
+    for i in range(0, totalTokens):
+        token = tokens[i].replace('</w>', ' ')
+        # alternate color
+        s = (usedTokens % 6) + 1
+        if i < model.cond_stage_model.max_length:
+            tokenized = tokenized + f"\x1b[0;3{s};40m{token}"
+            usedTokens += 1
+        else:  # over max token length
+            discarded = discarded + f"\x1b[0;3{s};40m{token}"
+    print(f"\n>> Tokens ({usedTokens}), Weight ({weight:.2f}):\n{tokenized}\x1b[0m")
+    if discarded != "":
+        print(
+            f">> Tokens Discarded ({totalTokens-usedTokens}):\n{discarded}\x1b[0m"
+        )
+
+
 class DeforumGenerator():
 
 
@@ -53,7 +171,7 @@ class DeforumGenerator():
                 animation_prompts = 'test',
                 H = 512,
                 W = 512,
-                seed = -1,  # @param
+                seed = 0,  # @param
                 sampler = 'klms',  # @param ["klms","dpm2","dpm2_ancestral","heun","euler","euler_ancestral","plms", "ddim"]
                 steps = 20,  # @param
                 scale = 7,  # @param
@@ -468,7 +586,7 @@ class DeforumGenerator():
         self.clear_latent = clear_latent
         self.clear_sample = clear_sample
         self.use_init = use_init
-
+        self.step_callback = step_callback
         self.angle = angle
         self.zoom = zoom
         self.translation_x = translation_x
@@ -485,6 +603,8 @@ class DeforumGenerator():
         self.noise_schedule = noise_schedule
         self.strength_schedule = strength_schedule
         self.contrast_schedule = contrast_schedule
+        self.step_callback = step_callback
+        self.show_sample_per_step = show_sample_per_step
 
         if self.clear_latent == True:
             self.init_latent = None
@@ -724,77 +844,70 @@ class DeforumGenerator():
         del self.gs.models["adabins"]
         self.torch_gc()
 
-    def generate(self, frame=0, return_latent=False, return_sample=False, return_c=False):
-
+    def generate(self, frame = 0, return_latent=False, return_sample=False, return_c=False):
         seed_everything(self.seed)
         os.makedirs(self.outdir, exist_ok=True)
-
-        sampler = PLMSSampler(self.gs.models["sd"]) if self.sampler == 'plms' else DDIMSampler(self.gs.models["sd"])
-        self.model_wrap = CompVisDenoiser(self.gs.models["sd"])
+    
+        sampler = PLMSSampler(gs.models["sd"]) if self.sampler == 'plms' else DDIMSampler(gs.models["sd"])
+        self.model_wrap = CompVisDenoiser(gs.models["sd"])
         batch_size = self.n_samples
         prompt = self.prompt
         assert prompt is not None
         data = [batch_size * [prompt]]
         precision_scope = autocast if self.precision == "autocast" else nullcontext
-
-        #init_latent = None
-        #mask_image = None
-        #init_image = None
+    
+        init_latent = None
+        mask_image = None
+        init_image = None
         if self.init_latent is not None:
-            self.init_latent = self.init_latent
+            init_latent = self.init_latent
         elif self.init_sample is not None:
             with precision_scope("cuda"):
-                self.init_latent = self.gs.models["sd"].get_first_stage_encoding(
-                    self.gs.models["sd"].encode_first_stage(self.init_sample))
-
-
+                init_latent = gs.models["sd"].get_first_stage_encoding(gs.models["sd"].encode_first_stage(self.init_sample))
         elif self.use_init and self.init_image != None and self.init_image != '':
-            self.init_image, mask_image = load_img(self.init_image,
+            init_image, mask_image = load_img(self.init_image,
                                               shape=(self.W, self.H),
                                               use_alpha_as_mask=self.use_alpha_as_mask)
-            self.init_image = self.init_image.to('cuda')
-            self.init_image = repeat(self.init_image, '1 ... -> b ...', b=batch_size)
+            init_image = init_image.to(self.device)
+            init_image = repeat(init_image, '1 ... -> b ...', b=batch_size)
             with precision_scope("cuda"):
-                self.init_latent = self.gs.models["sd"].get_first_stage_encoding(
-                    self.gs.models["sd"].encode_first_stage(self.init_image))  # move to latent space
-        #self.init_latent = init_latent
+                init_latent = gs.models["sd"].get_first_stage_encoding(gs.models["sd"].encode_first_stage(init_image))  # move to latent space        
+    
         if not self.use_init and self.strength > 0 and self.strength_0_no_init:
             print("\nNo init image, but strength > 0. Strength has been auto set to 0, since use_init is False.")
             print("If you want to force strength > 0 with no init, please set strength_0_no_init to False.\n")
             self.strength = 0
-
+    
         # Mask functions
         if self.use_mask:
             assert self.mask_file is not None or mask_image is not None, "use_mask==True: An mask image is required for a mask. Please enter a mask_file or use an init image with an alpha channel"
             assert self.use_init, "use_mask==True: use_init is required for a mask"
-            assert self.init_latent is not None, "use_mask==True: An latent init image is required for a mask"
-
+            assert init_latent is not None, "use_mask==True: An latent init image is required for a mask"
+    
+    
             mask = prepare_mask(self.mask_file if mask_image is None else mask_image,
-                                self.init_latent.shape,
+                                init_latent.shape,
                                 self.mask_contrast_adjust,
                                 self.mask_brightness_adjust)
-
+    
             if (torch.all(mask == 0) or torch.all(mask == 1)) and self.use_alpha_as_mask:
-                raise Warning(
-                    "use_alpha_as_mask==True: Using the alpha channel from the init image as a mask, but the alpha channel is blank.")
-
-            mask = mask.to('cuda')
+                raise Warning("use_alpha_as_mask==True: Using the alpha channel from the init image as a mask, but the alpha channel is blank.")
+    
+            mask = mask.to(self.device)
             mask = repeat(mask, '1 ... -> b ...', b=batch_size)
         else:
             mask = None
-
-        assert not ((self.use_mask and self.overlay_mask) and (
-                    self.init_sample is None and self.init_image is None)), "Need an init image when use_mask == True and overlay_mask == True"
-
-        self.t_enc = int((1.0 - self.strength) * self.steps)
-
+    
+        assert not ( (self.use_mask and self.overlay_mask) and (self.init_sample is None and init_image is None)), "Need an init image when use_mask == True and overlay_mask == True"
+    
+        self.t_enc = int((1.0-self.strength) * self.steps)
+    
         # Noise schedule for the k-diffusion samplers (used for masking)
         k_sigmas = self.model_wrap.get_sigmas(self.steps)
-        k_sigmas = k_sigmas[len(k_sigmas) - self.t_enc - 1:]
-
-        if self.sampler in ['plms', 'ddim']:
-            sampler.make_schedule(ddim_num_steps=self.steps, ddim_eta=self.ddim_eta, ddim_discretize='fill',
-                                  verbose=False)
+        k_sigmas = k_sigmas[len(k_sigmas)-self.t_enc-1:]
+    
+        if self.sampler in ['plms','ddim']:
+            sampler.make_schedule(ddim_num_steps=self.steps, ddim_eta=self.ddim_eta, ddim_discretize='fill', verbose=False)
 
         callback = SamplerCallback( n_samples=self.n_samples,
                                     save_sample_per_step=self.save_sample_per_step,
@@ -804,132 +917,131 @@ class DeforumGenerator():
                                     timestring=self.timestring,
                                     seed=self.seed,
                                     sigmas=k_sigmas,
-                                    verbose=False).callback
+                                    verbose=False,
+                                    step_callback=self.step_callback).callback
 
-
-        #callback = None
-
+    
         results = []
         with torch.no_grad():
             with precision_scope("cuda"):
-                with self.gs.models["sd"].ema_scope():
+                with gs.models["sd"].ema_scope():
                     for prompts in data:
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
                         if self.prompt_weighting:
-                            self.uc, self.c = get_uc_and_c(prompts, self.gs.models["sd"], self.n_samples, self.log_weighted_subprompts, self.normalize_prompt_weights, frame)
-                        else:
-                            self.uc = self.gs.models["sd"].get_learned_conditioning(batch_size * [""])
-                            self.c = self.gs.models["sd"].get_learned_conditioning(prompts)
+                            self.uc, self.c = get_uc_and_c(prompts, gs.models["sd"], self.n_samples, self.log_weighted_subprompts, self.normalize_prompt_weights, frame)
 
+
+                        else:
+                            self.uc = gs.models["sd"].get_learned_conditioning(batch_size * [""])
+                            self.c = gs.models["sd"].get_learned_conditioning(prompts)
+    
+    
                         if self.scale == 1.0:
                             self.uc = None
                         if self.init_c != None:
                             self.c = self.init_c
-
-                        if self.sampler in ["klms", "dpm2", "dpm2_ancestral", "heun", "euler", "euler_ancestral"]:
-                            samples = self.sampler_fn()
+    
+                        if self.sampler in ["klms","dpm2","dpm2_ancestral","heun","euler","euler_ancestral"]:
+                            samples = self.sampler_fn(init_latent)
                         else:
                             # self.sampler == 'plms' or self.sampler == 'ddim':
-                            if self.init_latent is not None and self.strength > 0:
-                                z_enc = sampler.stochastic_encode(self.init_latent,
-                                                                  torch.tensor([self.t_enc] * batch_size).to('cuda'))
+                            if init_latent is not None and self.strength > 0:
+                                self.z_enc = sampler.stochastic_encode(init_latent, torch.tensor([self.t_enc]*batch_size).to(self.device))
                             else:
-                                z_enc = torch.randn([self.n_samples, self.C, self.H // self.f, self.W // self.f],
-                                                    device='cuda')
+
+                                self.z_enc = torch.randn([self.n_samples, self.C, self.H // self.f, self.W // self.f], device=self.device)
                             if self.sampler == 'ddim':
-                                samples = sampler.decode(z_enc,
+                                samples = sampler.decode(self.z_enc,
                                                          self.c,
                                                          self.t_enc,
                                                          unconditional_guidance_scale=self.scale,
                                                          unconditional_conditioning=self.uc,
                                                          img_callback=callback)
-                            elif self.sampler == 'plms':  # no "decode" function in plms, so use "sample"
+                            elif self.sampler == 'plms': # no "decode" function in plms, so use "sample"
                                 shape = [self.C, self.H // self.f, self.W // self.f]
                                 samples, _ = sampler.sample(S=self.steps,
-                                                            conditioning=self.c,
+                                                            conditioning=c,
                                                             batch_size=self.n_samples,
                                                             shape=shape,
                                                             verbose=False,
                                                             unconditional_guidance_scale=self.scale,
                                                             unconditional_conditioning=self.uc,
                                                             eta=self.ddim_eta,
-                                                            x_T=z_enc,
+                                                            x_T=self.z_enc,
                                                             img_callback=callback)
                             else:
                                 raise Exception(f"Sampler {self.sampler} not recognised.")
-
+    
+    
                         if return_latent:
                             results.append(samples.clone())
-                        self.cb = None
-                        self.callback = None
-                        x_samples = self.gs.models["sd"].decode_first_stage(samples)
-
+    
+                        x_samples = gs.models["sd"].decode_first_stage(samples)
+    
                         if self.use_mask and self.overlay_mask:
                             # Overlay the masked image after the image is generated
                             if self.init_sample is not None:
                                 img_original = self.init_sample
-                            elif self.init_image is not None:
-                                img_original = self.init_image
+                            elif init_image is not None:
+                                img_original = init_image
                             else:
                                 raise Exception("Cannot overlay the masked image without an init image to overlay")
-
+    
                             mask_fullres = prepare_mask(self.mask_file if mask_image is None else mask_image,
                                                         img_original.shape,
                                                         self.mask_contrast_adjust,
                                                         self.mask_brightness_adjust)
-                            mask_fullres = mask_fullres[:, :3, :, :]
+                            mask_fullres = mask_fullres[:,:3,:,:]
                             mask_fullres = repeat(mask_fullres, '1 ... -> b ...', b=batch_size)
-
+    
                             mask_fullres[mask_fullres < mask_fullres.max()] = 0
                             mask_fullres = gaussian_filter(mask_fullres, self.mask_overlay_blur)
-                            mask_fullres = torch.Tensor(mask_fullres).to('cuda')
-
+                            mask_fullres = torch.Tensor(mask_fullres).to(self.device)
+    
                             x_samples = img_original * mask_fullres + x_samples * ((mask_fullres * -1.0) + 1)
-
+    
+    
                         if return_sample:
                             results.append(x_samples.clone())
-
+    
                         x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
-
+    
                         if return_c:
                             results.append(self.c.clone())
-
+    
                         for x_sample in x_samples:
                             x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
                             image = Image.fromarray(x_sample.astype(np.uint8))
                             results.append(image)
-
-
-        self.torch_gc()
-
         return results
 
-    def sampler_fn(self) -> torch.Tensor:
+
+    def sampler_fn(self, init_latent) -> torch.Tensor:
         shape = [self.C, self.H // self.f, self.W // self.f]
         sigmas: torch.Tensor = self.model_wrap.get_sigmas(self.steps)
         sigmas = sigmas[len(sigmas) - self.t_enc - 1:]
         if self.use_init:
             if len(sigmas) > 0:
                 x = (
-                        self.init_latent
+                        init_latent
                         + torch.randn([self.n_samples, *shape], device='cuda') * sigmas[0]
                 )
             else:
-                x = self.init_latent
+                x = init_latent
         else:
             if len(sigmas) > 0:
                 x = torch.randn([self.n_samples, *shape], device='cuda') * sigmas[0]
             else:
                 x = torch.zeros([self.n_samples, *shape], device='cuda')
-        self.cb = None
+
         sampler_args = {
             "model": CFGDenoiser(self.model_wrap),
             "x": x,
             "sigmas": sigmas,
             "extra_args": {"cond": self.c, "uncond": self.uc, "cond_scale": self.scale},
             "disable": False,
-            "callback": self.cb,
+            "callback": self.step_callback,
         }
         sampler_map = {
             "klms": sampling.sample_lms,
@@ -998,17 +1110,17 @@ class CFGDenoiser(nn.Module):
 class SamplerCallback(object):
     # Creates the callback function to be passed into the samplers for each step
     def __init__(self, n_samples, save_sample_per_step, show_sample_per_step, outdir, sampler_name, timestring, seed, mask=None, init_latent=None, sigmas=None, sampler=None,
-                 verbose=False, *args, **kwargs):
+                 step_callback=None, verbose=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        #self.sampler_name = self.sampler
-        """self.dynamic_threshold = self.dynamic_threshold
-        self.static_threshold = self.static_threshold
+        self.sampler_name = sampler_name
+        #self.dynamic_threshold = dynamic_threshold
+        #self.static_threshold = static_threshold
         self.mask = mask
         self.init_latent = init_latent
         self.sigmas = sigmas
         self.sampler = sampler
-        self.verbose = verbose"""
-
+        self.verbose = verbose
+        self.step_callback = step_callback
         self.batch_size = n_samples
         self.save_sample_per_step = save_sample_per_step
         self.show_sample_per_step = show_sample_per_step
@@ -1044,8 +1156,11 @@ class SamplerCallback(object):
         self.verbose_print = print if verbose else lambda *args, **kwargs: None
 
     def view_sample_step(self, latents, path_name_modifier=''):
+
+        print("step_callback")
         if self.save_sample_per_step or self.show_sample_per_step:
-            samples = self.gs.models["sd"].decode_first_stage(latents)
+            self.step_callback(latents)
+            #samples = self.gs.models["sd"].decode_first_stage(latents)
             if self.save_sample_per_step:
                 fname = f'{path_name_modifier}_{self.step_index:05}.png'
                 for i, sample in enumerate(samples):
@@ -1054,9 +1169,10 @@ class SamplerCallback(object):
                     grid = make_grid(sample, 4).cpu()
                     TF.to_pil_image(grid).save(os.path.join(self.paths_to_image_steps[i], fname))
             if self.show_sample_per_step:
+
                 print(path_name_modifier)
                 #self.display_images(samples)
-        return samples
+        return latents
 
     def display_images(self, images):
         images = images.double().cpu().add(1).div(2).clamp(0, 1)
@@ -1100,7 +1216,7 @@ class SamplerCallback(object):
             torch.clamp_(img, -1*self.static_threshold, self.static_threshold)
         if self.mask is not None:
             i_inv = len(self.sigmas) - i - 1
-            init_noise = self.sampler.stochastic_encode(self.init_latent, torch.tensor([i_inv]*self.batch_size).to(device), noise=self.noise)
+            init_noise = self.sampler.stochastic_encode(self.init_latent, torch.tensor([i_inv]*self.batch_size).to(self.device), noise=self.noise)
             is_masked = torch.logical_and(self.mask >= self.mask_schedule[i], self.mask != 0 )
             new_img = init_noise * torch.where(is_masked,1,0) + img * torch.where(is_masked,0,1)
             img.copy_(new_img)
