@@ -1,3 +1,6 @@
+
+
+
 import pandas as pd
 
 import backend.settings as settings
@@ -5,8 +8,6 @@ from backend.singleton import singleton
 settings.load_settings_json()
 
 gs = singleton
-
-print(gs.defaults.general)
 
 import random
 import time, os, sys
@@ -49,10 +50,10 @@ class GenerateWindow(QObject):
         settings.load_settings_json()
 
         self.image_path = ""
-        self.deforum = DeforumGenerator(gs)
-        self.gr = Generate(gs = gs,
-                           weights     = 'models/sd-v1-4.ckpt',
-                           config     = 'configs/stable-diffusion/v1-inference.yaml',)
+        self.deforum = DeforumGenerator()
+        self.gr = Generate(
+            weights     = 'models/sd-v1-4.ckpt',
+            config     = 'configs/stable-diffusion/v1-inference.yaml',)
         gs.album = {}
 
 
@@ -158,6 +159,9 @@ class GenerateWindow(QObject):
         self.w.dynaview.w.setMinimumSize(QtCore.QSize(512, 512))
         self.w.tabifyDockWidget(self.w.thumbnails, self.w.sampler.w.dockWidget)
         self.w.tabifyDockWidget(self.w.dynaimage.w.dockWidget, self.w.dynaview.w.dockWidget)
+
+        self.w.tabifyDockWidget( self.w.sizer_count.w.dockWidget, self.animDials.w.dockWidget)
+
 
         self.w.thumbnails.setWindowTitle('Thumbnails')
         self.w.sampler.w.dockWidget.setWindowTitle('Sampler')
@@ -347,9 +351,37 @@ class GenerateWindow(QObject):
 
     def run_deforum(self, progress_callback=None):
 
+        use_init = self.animDials.w.useInit.isChecked()
+        adabins = self.animDials.w.adabins.isChecked()
+        scale = self.animDials.w.scale.value()
+        ddim_eta = self.animDials.w.ddim_eta.value() / 1000
+        strength = self.animDials.w.strength.value() / 1000
+        mask_contrast_adjust = self.animDials.w.mask_contrast.value() / 1000
+        mask_brightness_adjust = self.animDials.w.mask_brightness.value() / 1000
+        mask_blur = self.animDials.w.mask_blur.value() / 1000
+        fov = self.animDials.w.fov.value()
+        max_frames = self.animDials.w.frames.value()
+        midas_weight = self.animDials.w.midas_weight.value() / 1000
+        near_plane = self.animDials.w.near_plane.value()
+        far_plane = self.animDials.w.far_plane.value()
 
 
-        max_frames = 5
+        clearLatent = self.animDials.w.clearLatent.isChecked()
+        clearSample = self.animDials.w.clearSample.isChecked()
+        #self.init_c = None
+        #if self.animDials.w.clearLatent.isChecked():
+        #    self.deforum.init_latent = None
+        #if self.animDials.w.clearSample.isChecked():
+        #    print("clearing")
+        #    self.deforum.init_c = None
+
+        #if use_init == False:
+        #    self.deforum.init_latent = None
+        #    self.deforum.init_sample = None
+
+
+
+
         keyframes=self.w.prompt.w.keyFrames.toPlainText()
         prompts=self.w.prompt.w.textEdit.toPlainText()
         prompt_series = pd.Series([np.nan for a in range(max_frames)])
@@ -375,9 +407,23 @@ class GenerateWindow(QObject):
         #print(prompt_series)
 
 
-        self.deforum.render_animation(  image_callback=self.image_cb,
+        self.deforum.render_animation(  adabins = adabins,
+                                        scale = scale,
+                                        ddim_eta = ddim_eta,
+                                        strength = strength,
+                                        mask_contrast_adjust = mask_contrast_adjust,
+                                        mask_brightness_adjust = mask_brightness_adjust,
+                                        mask_blur = mask_blur,
+                                        fov = fov,
+                                        max_frames = max_frames,
+                                        midas_weight = midas_weight,
+                                        near_plane = near_plane,
+                                        far_plane = far_plane,
+                                        image_callback=self.image_cb,
                                         animation_prompts=prompt_series,
-                                        max_frames=5,
+                                        use_init = use_init,
+                                        clear_latent = clearLatent,
+                                        clear_sample = clearSample,
                                         )
     def run_txt2img(self, progress_callback=None):
 
@@ -446,7 +492,7 @@ class GenerateWindow(QObject):
         self.update = 0
         for i in range(batchsize):
             for prompt in prompt_list:
-                print(f"Full Precision {full_precision}")
+
 
                 results = self.gr.prompt2image(prompt   = prompt,
                                                outdir   = outdir,
@@ -598,12 +644,12 @@ class GenerateWindow(QObject):
         self.progress = self.progress + self.onePercent
         self.w.progressBar.setValue(self.progress)
         # Pass the function to execute
-        #self.liveWorker = Worker(self.liveUpdate(data1, data2))
+        self.liveWorker2 = Worker(self.liveUpdate(data1, data2))
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            self.liveUpdate(data1, data2)
+        #with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        #    self.liveUpdate(data1, data2)
 
-        #threadpool.start(self.liveWorker)
+        self.threadpool.start(self.liveWorker2)
 
     def liveUpdate(self, data1, data2):
         self.w.statusBar().showMessage(f"Generating... (step {data2} of {self.steps})")
@@ -897,3 +943,5 @@ It also takes the following parameters:
     resume_from_timestring = False  # @param {type:"boolean"}
     resume_timestring = "20220829210106"  # @param {type:"string"}
 '''
+
+

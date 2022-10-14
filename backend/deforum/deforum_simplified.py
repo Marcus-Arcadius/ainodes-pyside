@@ -153,6 +153,9 @@ class DeforumGenerator():
                 # @markdown ####**Resume Animation:**
                 resume_from_timestring = False,  # @param {type:"boolean"}
                 resume_timestring = "20220829210106",  # @param {type:"string"}
+                adabins = False,
+                clear_latent = False,
+                clear_sample = False,
                 *args,
                 **kwargs
                 ):
@@ -264,13 +267,17 @@ class DeforumGenerator():
         # @markdown ####**Resume Animation:**
         self.resume_from_timestring = resume_from_timestring
         self.resume_timestring = resume_timestring
+        self.adabins = adabins
+        self.clear_latent = clear_latent
+        self.clear_sample = clear_sample
+
 
 
 
     def torch_gc(self):
-        gc.collect()
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
 
     def load_model(self):
         """Load and initialize the model from configuration variables passed at object creation time"""
@@ -431,9 +438,37 @@ class DeforumGenerator():
 
                          # @markdown ####**Resume Animation:**
                          resume_from_timestring = False,  # @param {type:"boolean"}
-                         resume_timestring = "20220829210106",  # @param {type:"string"}
+                         resume_timestring = "20220829210106",
+                         prev_sample = None,
+                         clear_latent = False,
+                         clear_sample = False,
                          *args,
                          **kwargs):
+        self.clear_latent = clear_latent
+        self.clear_sample = clear_sample
+        self.use_init = use_init
+
+        print(f"debug deforum: {self.clear_latent}, {self.clear_sample}")
+        if self.clear_latent == True:
+            self.init_latent = None
+            self.init_c = None
+        if self.clear_sample == True:
+            print("clearing everyhing supposedly..")
+            self.init_sample = None
+
+            self.prev_sample = None
+            self.turbo_prev_image = None
+            self.turbo_image = None
+            self.turbo_prev_depth = None
+
+            self.init_image = None
+            self.use_init = False
+
+
+        #if not use_init:
+
+
+
         if "sd" not in self.gs.models:
             self.gs.models["sd"] = self.load_model()
 
@@ -471,9 +506,6 @@ class DeforumGenerator():
         #    prompt_series[i] = prompt
         prompt_series = animation_prompts
 
-        print("we should see 5")
-        print(prompt_series)
-
         # check for video inits
         using_vid_init = animation_mode == 'Video Input'
 
@@ -484,8 +516,10 @@ class DeforumGenerator():
                 depth_model = DepthModel(self.gs, 'cuda')
                 depth_model.load_midas('models/')
                 if midas_weight < 1.0:
-                    self.gs.models["adabins"] = None
-                    #depth_model.load_adabins()
+                    if self.adabins:
+                        depth_model.load_adabins()
+                    else:
+                        self.gs.models["adabins"] = None
         else:
             depth_model = None
             save_depth_maps = False
