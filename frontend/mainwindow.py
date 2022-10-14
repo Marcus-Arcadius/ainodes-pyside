@@ -434,6 +434,8 @@ class GenerateWindow(QObject):
                                         show_sample_per_step=show_sample_per_step,
 
                                         )
+        self.stop_painters()
+        self.w.thumbnails.setUpdatesEnabled(True)
     def deforum_step_cb(self, data, *args, **kwargs):
         print(data.keys())
         print(type(data['x']))

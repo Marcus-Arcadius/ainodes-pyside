@@ -583,6 +583,11 @@ class DeforumGenerator():
                          keys = {},
                          *args,
                          **kwargs):
+        self.ddim_eta = ddim_eta
+        max_frames=max_frames
+        self.max_frames = max_frames
+        self.steps = steps
+        self.scale = scale
         self.clear_latent = clear_latent
         self.clear_sample = clear_sample
         self.use_init = use_init
