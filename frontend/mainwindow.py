@@ -1,6 +1,3 @@
-
-
-
 import pandas as pd
 
 import backend.settings as settings
@@ -34,6 +31,8 @@ from backend.worker import Worker
 
 from frontend.ui_classes import *
 from ldm.generate import Generate
+
+from PySide6.QtCore import *
 
 
 

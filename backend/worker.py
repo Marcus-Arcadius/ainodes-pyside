@@ -1,6 +1,6 @@
 import traceback, sys, os
 
-from PySide2.QtCore import QRunnable, Signal, QObject, Slot
+from PySide6.QtCore import QRunnable, Signal, QObject, Slot
 from backend.singleton import singleton
 
 gs = singleton
