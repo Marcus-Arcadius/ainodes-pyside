@@ -27,6 +27,8 @@ from ldm.dream.pngwriter           import PngWriter
 from ldm.dream.image_util          import InitImageResizer
 from ldm.dream.devices             import choose_torch_device
 from ldm.dream.conditioning        import get_uc_and_c
+from backend.singleton import singleton
+gs = singleton
 
 #from backend import singleton as gs
 import torch, gc
@@ -103,7 +105,7 @@ class Generate():
 
     def __init__(
             self,
-            gs = {},
+            gs = gs,
             iterations            = 1,
             steps                 = 50,
             cfg_scale             = 7.5,

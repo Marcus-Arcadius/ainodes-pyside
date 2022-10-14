@@ -39,7 +39,8 @@ import gc
 from k_diffusion.external import CompVisDenoiser
 from k_diffusion import sampling
 from torch import nn
-
+from backend.singleton import singleton
+gs = singleton
 from ldm.util import instantiate_from_config
 
 
@@ -48,7 +49,6 @@ class DeforumGenerator():
 
 
     def __init__(self,
-                gs,
                 prompts = "a beautiful forest by Asher Brown Durand, trending on Artstation",
                 animation_prompts = 'test',
                 H = 512,
@@ -283,30 +283,29 @@ class DeforumGenerator():
 
 
         """Load and initialize the model from configuration variables passed at object creation time"""
-        if "sd" not in self.gs.models:
-            seed_everything(random.randrange(0, np.iinfo(np.uint32).max))
-            try:
-                config = OmegaConf.load(self.config)
-                self.gs.models["sd"] = self._load_model_from_config(config, self.weights)
-                if self.embedding_path is not None:
-                    self.gs.models["sd"].embedding_manager.load(
-                        self.embedding_path, self.full_precision
-                    )
-                self.gs.models["sd"] = self.gs.models["sd"].to(self.device)
-                # model.to doesn't change the cond_stage_model.device used to move the tokenizer output, so set it here
-                self.gs.models["sd"].cond_stage_model.device = self.device
-            except AttributeError as e:
-                print(f'>> Error loading model. {str(e)}', file=sys.stderr)
-                print(traceback.format_exc(), file=sys.stderr)
-                raise SystemExit from e
+        seed_everything(random.randrange(0, np.iinfo(np.uint32).max))
+        try:
+            config = OmegaConf.load(self.config)
+            model = self._load_model_from_config(config, self.weights)
+            if self.embedding_path is not None:
+                self.gs.models["sd"].embedding_manager.load(
+                    self.embedding_path, self.full_precision
+                )
+            #model = model.half().to(self.device)
+            # model.to doesn't change the cond_stage_model.device used to move the tokenizer output, so set it here
+            model.cond_stage_model.device = self.device
+        except AttributeError as e:
+            print(f'>> Error loading model. {str(e)}', file=sys.stderr)
+            print(traceback.format_exc(), file=sys.stderr)
+            raise SystemExit from e
 
-            #self._set_sampler()
+        #self._set_sampler()
 
-            for m in self.gs.models["sd"].modules():
-                if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                    m._orig_padding_mode = m.padding_mode
+        for m in model.modules():
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+                m._orig_padding_mode = m.padding_mode
 
-        return
+        return model
     def animkeys(self):
         self.angle_series = get_inbetweens(parse_key_frames(self.angle), self.max_frames)
         self.zoom_series = get_inbetweens(parse_key_frames(self.zoom), self.max_frames)
@@ -436,7 +435,7 @@ class DeforumGenerator():
                          *args,
                          **kwargs):
         if "sd" not in self.gs.models:
-            self.load_model()
+            self.gs.models["sd"] = self.load_model()
 
         # animations use key framed prompts
         #prompts = animation_prompts
@@ -485,7 +484,8 @@ class DeforumGenerator():
                 depth_model = DepthModel(self.gs, 'cuda')
                 depth_model.load_midas('models/')
                 if midas_weight < 1.0:
-                    depth_model.load_adabins()
+                    self.gs.models["adabins"] = None
+                    #depth_model.load_adabins()
         else:
             depth_model = None
             save_depth_maps = False
@@ -526,6 +526,7 @@ class DeforumGenerator():
             if turbo_steps > 1:
                 tween_frame_start_idx = max(0, frame_idx - turbo_steps)
                 for tween_frame_idx in range(tween_frame_start_idx, frame_idx):
+                    self.torch_gc()
                     tween = float(tween_frame_idx - tween_frame_start_idx + 1) / float(
                         frame_idx - tween_frame_start_idx)
                     print(f"  creating in between frame {tween_frame_idx} tween:{tween:0.2f}")
@@ -535,7 +536,7 @@ class DeforumGenerator():
 
                     if depth_model is not None:
                         assert (turbo_next_image is not None)
-                        depth = depth_model.predict(turbo_next_image, self)
+                        depth = depth_model.predict(turbo_next_image)
 
                     if animation_mode == '2D':
                         if advance_prev:
@@ -544,9 +545,9 @@ class DeforumGenerator():
                             turbo_next_image = anim_frame_warp_2d(turbo_next_image, keys, tween_frame_idx, W, H, flip_2d_perspective, border)
                     else:  # '3D'
                         if advance_prev:
-                            turbo_prev_image = anim_frame_warp_3d(turbo_prev_image, depth, self, keys, tween_frame_idx)
+                            turbo_prev_image = anim_frame_warp_3d(turbo_prev_image, depth, keys, tween_frame_idx)
                         if advance_next:
-                            turbo_next_image = anim_frame_warp_3d(turbo_next_image, depth, self, keys, tween_frame_idx)
+                            turbo_next_image = anim_frame_warp_3d(turbo_next_image, depth, keys, tween_frame_idx)
                     turbo_prev_frame_idx = turbo_next_frame_idx = tween_frame_idx
 
                     if turbo_prev_image is not None and tween < 1.0:
@@ -595,7 +596,7 @@ class DeforumGenerator():
                 self.strength = max(0.0, min(1.0, strength))
 
             # grab prompt for current frame
-            prompt = prompt_series[frame_idx]
+            self.prompt = prompt_series[frame_idx]
             print(f"{prompt} {seed}")
             if not using_vid_init:
                 print(f"Angle: {keys.angle_series[frame_idx]} Zoom: {keys.zoom_series[frame_idx]}")
@@ -643,6 +644,8 @@ class DeforumGenerator():
             del depth_model
         except:
             pass
+        del self.gs.models["midas_model"]
+        del self.gs.models["adabins"]
         self.torch_gc()
 
     def generate(self, frame=0, return_latent=False, return_sample=False, return_c=False):
@@ -823,6 +826,7 @@ class DeforumGenerator():
 
 
         self.torch_gc()
+
         return results
 
     def sampler_fn(self) -> torch.Tensor:
