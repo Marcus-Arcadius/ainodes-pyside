@@ -467,7 +467,7 @@ class DeforumGenerator():
         gs.contrast_schedule_series = get_inbetweens(parse_key_frames(self.contrast_schedule), self.max_frames)
 
 
-        print(f"We should have a translation series of 10: {gs.translation_z_series}")
+        #print(f"We should have a translation series of 10: {gs.translation_z_series}")
 
     def render_animation(self,
                          image_callback = None,
@@ -715,9 +715,9 @@ class DeforumGenerator():
             noise = gs.noise_schedule_series[frame_idx]
             strength = gs.strength_schedule_series[frame_idx]
 
-            print(f'keys: {keys}')
-            print(gs.contrast_schedule_series)
-            print(gs.contrast_schedule_series[frame_idx])
+            #print(f'keys: {keys}')
+            #print(gs.contrast_schedule_series)
+            #print(gs.contrast_schedule_series[frame_idx])
 
 
             contrast = gs.contrast_schedule_series[frame_idx]
@@ -1162,7 +1162,7 @@ class SamplerCallback(object):
 
     def view_sample_step(self, latents, path_name_modifier=''):
 
-        print("step_callback")
+        #print("step_callback")
         if self.save_sample_per_step or self.show_sample_per_step:
             self.step_callback(latents)
             #samples = self.gs.models["sd"].decode_first_stage(latents)

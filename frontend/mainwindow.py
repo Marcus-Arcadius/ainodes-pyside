@@ -212,7 +212,23 @@ class GenerateWindow(QObject):
         self.ipixmap = QPixmap(512, 512)
         self.livePainter.end()
         self.vpainter["iins"].end()
-
+        self.setup_defaults()
+    def setup_defaults(self):
+        self.animKeys.w.angle.setText("0:(0)")
+        self.animKeys.w.zoom.setText("0:(0)")
+        self.animKeys.w.trans_x.setText("0:(0)")
+        self.animKeys.w.trans_y.setText("0:(0)")
+        self.animKeys.w.trans_z.setText("0:(0)")
+        self.animKeys.w.rot_x.setText("0:(0)")
+        self.animKeys.w.rot_y.setText("0:(0)")
+        self.animKeys.w.rot_z.setText("0:(0)")
+        self.animKeys.w.persp_theta.setText("0:(0)")
+        self.animKeys.w.persp_phi.setText("0:(0)")
+        self.animKeys.w.persp_gamma.setText("0:(0)")
+        self.animKeys.w.persp_fv.setText("0:(0)")
+        self.animKeys.w.noise_sched.setText("0:(0.02)")
+        self.animKeys.w.strength_sched.setText("0:(0.65)")
+        self.animKeys.w.contrast_sched.setText("0:(1)")
     def updateThumbsZoom(self):
         while gs.callbackBusy == True:
             time.sleep(0.1)
@@ -335,6 +351,25 @@ class GenerateWindow(QObject):
 
         clearLatent = self.animDials.w.clearLatent.isChecked()
         clearSample = self.animDials.w.clearSample.isChecked()
+
+
+
+        angle = self.animKeys.w.angle.toPlainText()
+        zoom = self.animKeys.w.zoom.toPlainText()
+        translation_x = self.animKeys.w.trans_x.toPlainText()
+        translation_y = self.animKeys.w.trans_y.toPlainText()
+        translation_z = self.animKeys.w.trans_z.toPlainText()
+        rotation_3d_x = self.animKeys.w.rot_x.toPlainText()
+        rotation_3d_y = self.animKeys.w.rot_y.toPlainText()
+        rotation_3d_z = self.animKeys.w.rot_z.toPlainText()
+        flip_2d_perspective = False
+        perspective_flip_theta = self.animKeys.w.persp_theta.toPlainText()
+        perspective_flip_phi = self.animKeys.w.persp_phi.toPlainText()
+        perspective_flip_gamma = self.animKeys.w.persp_gamma.toPlainText()
+        perspective_flip_fv = self.animKeys.w.persp_fv.toPlainText()
+        noise_schedule = self.animKeys.w.noise_sched.toPlainText()
+        strength_schedule = self.animKeys.w.strength_sched.toPlainText()
+        contrast_schedule = self.animKeys.w.contrast_sched.toPlainText()
         #self.init_c = None
         #if self.animDials.w.clearLatent.isChecked():
         #    self.deforum.init_latent = None
@@ -379,7 +414,8 @@ class GenerateWindow(QObject):
 
         self.onePercent = 100 / (1 * self.steps * max_frames * max_frames)
         self.updateRate = self.w.sizer_count.w.previewSlider.value()
-        self.deforum.render_animation(  steps=self.steps,
+        self.deforum.render_animation(  animation_prompts=prompt_series,
+                                        steps=self.steps,
                                         adabins = adabins,
                                         scale = scale,
                                         ddim_eta = ddim_eta,
@@ -393,12 +429,27 @@ class GenerateWindow(QObject):
                                         near_plane = near_plane,
                                         far_plane = far_plane,
                                         image_callback=self.imageCallback_signal,
-                                        animation_prompts=prompt_series,
                                         use_init = use_init,
                                         clear_latent = clearLatent,
                                         clear_sample = clearSample,
                                         step_callback = self.deforumstepCallback_signal,
                                         show_sample_per_step=show_sample_per_step,
+                                        angle = angle,
+                                        zoom = zoom,
+                                        translation_x = translation_x,
+                                        translation_y = translation_y,
+                                        translation_z = translation_z,
+                                        rotation_3d_x = rotation_3d_x,
+                                        rotation_3d_y = rotation_3d_y,
+                                        rotation_3d_z = rotation_3d_z,
+                                        flip_2d_perspective = flip_2d_perspective,
+                                        perspective_flip_theta = perspective_flip_theta,
+                                        perspective_flip_phi = perspective_flip_phi,
+                                        perspective_flip_gamma = perspective_flip_gamma,
+                                        perspective_flip_fv = perspective_flip_fv,
+                                        noise_schedule = noise_schedule,
+                                        strength_schedule = strength_schedule,
+                                        contrast_schedule = contrast_schedule,
 
                                         )
         self.stop_painters()
@@ -537,8 +588,8 @@ class GenerateWindow(QObject):
                                                step_callback=self.deforumstepCallback_signal,
                                                image_callback=self.imageCallback_signal)
                 for row in results:
-                    print(f'filename={row[0]}')
-                    print(f'seed    ={row[1]}')
+                    #print(f'filename={row[0]}')
+                    #print(f'seed    ={row[1]}')
                     filename = random.randint(10000, 99999)
                     output = f'outputs/{filename}.png'
                     row[0].save(output)
