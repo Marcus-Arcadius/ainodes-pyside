@@ -610,6 +610,13 @@ class DeforumGenerator():
         self.contrast_schedule = contrast_schedule
         self.step_callback = step_callback
         self.show_sample_per_step = show_sample_per_step
+        self.diffusion_cadence = diffusion_cadence
+        near_plane = near_plane
+        far_plane = far_plane
+        fov = fov
+        sampling_mode = sampling_mode
+        padding_mode = padding_mode
+
 
         if self.clear_latent == True:
             self.init_latent = None
@@ -737,7 +744,7 @@ class DeforumGenerator():
 
                     if depth_model is not None:
                         assert (turbo_next_image is not None)
-                        depth = depth_model.predict(turbo_next_image)
+                        depth = depth_model.predict(turbo_next_image, midas_weight)
 
                     if animation_mode == '2D':
                         if advance_prev:
@@ -746,9 +753,11 @@ class DeforumGenerator():
                             turbo_next_image = anim_frame_warp_2d(turbo_next_image, gs, tween_frame_idx, W, H, flip_2d_perspective, border)
                     else:  # '3D'
                         if advance_prev:
-                            turbo_prev_image = anim_frame_warp_3d(turbo_prev_image, depth, gs, tween_frame_idx)
+                            turbo_prev_image = anim_frame_warp_3d(turbo_prev_image, depth, gs, tween_frame_idx, near_plane, far_plane,
+                                                                  fov, sampling_mode, padding_mode)
                         if advance_next:
-                            turbo_next_image = anim_frame_warp_3d(turbo_next_image, depth, gs, tween_frame_idx)
+                            turbo_next_image = anim_frame_warp_3d(turbo_next_image, depth, gs, tween_frame_idx, near_plane, far_plane,
+                                               fov, sampling_mode, padding_mode)
                     turbo_prev_frame_idx = turbo_next_frame_idx = tween_frame_idx
 
                     if turbo_prev_image is not None and tween < 1.0:

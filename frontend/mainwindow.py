@@ -347,13 +347,9 @@ class GenerateWindow(QObject):
         midas_weight = self.animDials.w.midas_weight.value() / 1000
         near_plane = self.animDials.w.near_plane.value()
         far_plane = self.animDials.w.far_plane.value()
-
-
+        cadence = self.animKeys.w.cadenceSlider.value()
         clearLatent = self.animDials.w.clearLatent.isChecked()
         clearSample = self.animDials.w.clearSample.isChecked()
-
-
-
         angle = self.animKeys.w.angle.toPlainText()
         zoom = self.animKeys.w.zoom.toPlainText()
         translation_x = self.animKeys.w.trans_x.toPlainText()
@@ -370,18 +366,6 @@ class GenerateWindow(QObject):
         noise_schedule = self.animKeys.w.noise_sched.toPlainText()
         strength_schedule = self.animKeys.w.strength_sched.toPlainText()
         contrast_schedule = self.animKeys.w.contrast_sched.toPlainText()
-        #self.init_c = None
-        #if self.animDials.w.clearLatent.isChecked():
-        #    self.deforum.init_latent = None
-        #if self.animDials.w.clearSample.isChecked():
-        #    print("clearing")
-        #    self.deforum.init_c = None
-
-        #if use_init == False:
-        #    self.deforum.init_latent = None
-        #    self.deforum.init_sample = None
-
-
 
 
         keyframes=self.w.prompt.w.keyFrames.toPlainText()
@@ -450,6 +434,7 @@ class GenerateWindow(QObject):
                                         noise_schedule = noise_schedule,
                                         strength_schedule = strength_schedule,
                                         contrast_schedule = contrast_schedule,
+                                        diffusion_cadence=cadence,
 
                                         )
         self.stop_painters()
