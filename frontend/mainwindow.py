@@ -39,6 +39,7 @@ from PySide6.QtCore import *
 
 class Callbacks(QObject):
     txt2img_step = Signal()
+    txt2img_additem = Signal()
     txt2img_finished = Signal()
     deforum_step = Signal()
     deforum_finished = Signal()
@@ -293,9 +294,9 @@ class GenerateWindow(QObject):
         imageSize = item.icon().actualSize(QSize(10000, 10000))
         qimage = QImage(item.icon().pixmap(imageSize).toImage())
         self.newPixmap[vins] = QPixmap(qimage.size())
-        self.vpainter[vins] = QPainter(self.newPixmap[vins])
+        self.vpainter[vins] = QPainter()
         newItem = QGraphicsPixmapItem()
-        self.vpainter[vins].begin()
+        self.vpainter[vins].begin(self.newPixmap[vins])
         self.vpainter[vins].drawImage(QRect(QPoint(0, 0), QSize(qimage.size())), qimage)
         newItem.setPixmap(self.newPixmap[vins])
 
@@ -309,10 +310,10 @@ class GenerateWindow(QObject):
         self.vpainter[vins].end()
 
     def taskSwitcher(self):
-        choice = self.w.sampler.w.comboBox_4.currentText()
-        if choice == "Text to Video":
+        self.choice = self.w.sampler.w.comboBox_4.currentText()
+        if self.choice == "Text to Video":
             self.deforum_thread()
-        elif choice == "Text to Image":
+        elif self.choice == "Text to Image":
             self.txt2img_thread()
 
     def run_deforum(self, progress_callback=None):
@@ -412,8 +413,12 @@ class GenerateWindow(QObject):
         self.image = image
         self.signals.txt2img_finished.connect(self.imageCallback_func)
         self.signals.txt2img_finished.emit()
-    def deforumstepCallback_signal(self, data):
+    def deforumstepCallback_signal(self, data, data2=None, *args, **kwargs):
         self.data = data
+        if data2 is not None:
+            self.data2=data2
+        else:
+            self.data2=None
         self.signals.deforum_step.connect(self.deforumstepCallback_func)
         self.signals.deforum_step.emit()
     @Slot()
@@ -427,7 +432,15 @@ class GenerateWindow(QObject):
         self.updateRate = self.w.sizer_count.w.previewSlider.value()
         self.progress = self.progress + self.onePercent
         self.w.progressBar.setValue(self.progress)
-        self.liveUpdate(self.data['denoised'], self.data['i'])
+        if self.choice == "Text to Video":
+            self.liveUpdate(self.data['denoised'], self.data['i'])
+        elif self.choice == "Text to Image":
+            self.liveUpdate(self.data)
+    @Slot()
+    def add_image_to_thumbnail(self):
+        self.w.statusBar().showMessage("Ready...")
+        self.w.thumbnails.thumbs.addItem(QListWidgetItem(QIcon(self.image_path), str(self.w.prompt.w.textEdit.toPlainText())))
+
     @Slot()
     def imageCallback_func(self, image=None, seed=None, upscaled=False, use_prefix=None, first_seed=None):
 
@@ -436,7 +449,6 @@ class GenerateWindow(QObject):
         self.vpainter["iins"].drawImage(QRect(0, 0, 512, 512), qimage)
         self.w.dynaimage.w.label.setPixmap(self.ipixmap.scaled(512, 512, Qt.AspectRatioMode.KeepAspectRatio))
         self.vpainter["iins"].end()
-        self.w.thumbnails.thumbs.addItem(QListWidgetItem(QIcon(self.image_path), str(self.w.prompt.w.textEdit.toPlainText())))
 
 
     def run_txt2img(self, progress_callback=None):
@@ -531,12 +543,13 @@ class GenerateWindow(QObject):
                     output = f'outputs/{filename}.png'
                     row[0].save(output)
                     self.image_path = output
+                    self.signals.txt2img_additem.connect(self.add_image_to_thumbnail)
+                    self.signals.txt2img_additem.emit()
                     #print("We did set the image")
                     #
                     #self.get_pic(clear=False)
-                self.w.statusBar().showMessage("Ready...")
-        self.stop_painters()
-        self.w.thumbnails.setUpdatesEnabled(True)
+
+        #self.stop_painters()
 
     def deforum_thread(self):
         #self.w.thumbnails.setUpdatesEnabled(False)
@@ -671,8 +684,6 @@ class GenerateWindow(QObject):
         if self.update >= self.updateRate:
             try:
                 self.update = 0
-
-                #QtConcurrent.run(self.threadpool, self.test_output, data1, data2)
                 self.test_output(data1, data2)
             except Exception as e:
                 print(f"Exception: {e}")
@@ -685,57 +696,22 @@ class GenerateWindow(QObject):
 
     def test_output(self, data1, data2):
 
-        if gs.callbackBusy == False:
-            try:
-                self.livePainter.begin(self.tpixmap)
-                gs.callbackBusy = True
+        self.livePainter.begin(self.tpixmap)
+        x_samples = torch.clamp((data1 + 1.0) / 2.0, min=0.0, max=1.0)
+        if len(x_samples) != 1:
+            raise Exception(
+                f'>> expected to get a single image, but got {len(x_samples)}')
+        x_sample = 255.0 * rearrange(
+            x_samples[0].cpu().numpy(), 'c h w -> h w c'
+        )
+        #self.x_sample = cv2.cvtColor(self.x_sample.astype(np.uint8), cv2.COLOR_RGB2BGR)
+        x_sample = x_sample.astype(np.uint8)
+        dPILimg = Image.fromarray(x_sample)
+        dqimg = ImageQt(dPILimg)
+        self.livePainter.drawImage(QRect(0, 0, 512, 512), dqimg)
+        self.w.dynaview.w.label.setPixmap(self.tpixmap.scaled(512, 512, Qt.AspectRatioMode.KeepAspectRatio))
+        self.livePainter.end()
 
-                #transform = T.ToPILImage()
-                #img = transform(data1)
-                #img = Image.fromarray(data1.astype(np.uint8))
-                #img = QImage.fromTensor(data1)
-
-                x_samples = torch.clamp((data1 + 1.0) / 2.0, min=0.0, max=1.0)
-                if len(x_samples) != 1:
-                    raise Exception(
-                        f'>> expected to get a single image, but got {len(x_samples)}')
-                x_sample = 255.0 * rearrange(
-                    x_samples[0].cpu().numpy(), 'c h w -> h w c'
-                )
-
-                #self.x_sample = cv2.cvtColor(self.x_sample.astype(np.uint8), cv2.COLOR_RGB2BGR)
-                x_sample = x_sample.astype(np.uint8)
-                dPILimg = Image.fromarray(x_sample)
-
-                tins = random.randint(10000, 99999)
-
-                #self.tpixmap = QPixmap(512, 512)
-                #self.vpainter[tins] = QPainter(self.tpixmap)
-
-                #self.vpainter[tins].begin(self.tpixmap)
-                #self.vpainter[tins].device()
-                dqimg = ImageQt(dPILimg)
-                #self.qimage[tins] = ImageQt(dPILimg)
-                self.livePainter.drawImage(QRect(0, 0, 512, 512), dqimg)
-                self.w.dynaview.w.label.setPixmap(self.tpixmap.scaled(512, 512, Qt.AspectRatioMode.KeepAspectRatio))
-                #self.w.dynaview.w.label.setPixmap(self.tpixmap[tins].scaled(512, 512, Qt.AspectRatioMode.IgnoreAspectRatio))
-                #self.vpainter[tins].end()
-                #self.w.dynaview.w.label.update()
-                #gs.callbackBusy = False
-
-                #dqimg = ImageQt(dPILimg)
-                #qimg = QPixmap.fromImage(dqimg)
-                self.livePainter.end()
-                #self.vpainter[tins].end()
-
-
-                gs.callbackBusy = False
-                #result = data2
-                return self.pass_object
-            except Exception as e:
-                print(f"Exception: {e}")
-                return self.pass_object
-        #dynapixmap = QPixmap(QPixmap.fromImage(dqimg))
     def pass_object(self, progress_callback=None):
         pass
 
