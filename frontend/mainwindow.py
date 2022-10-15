@@ -51,18 +51,19 @@ class GenerateWindow(QObject):
     w = loader.load(file)
     file.close()
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super(GenerateWindow, self).__init__(*args, **kwargs)
+        self.ftimer = QTimer(self)
         self.signals = Callbacks()
 
         settings.load_settings_json()
-
+        self.videoPreview = False
         self.image_path = ""
         self.deforum = DeforumGenerator()
         self.gr = Generate(
             weights     = 'models/sd-v1-4.ckpt',
             config     = 'configs/stable-diffusion/v1-inference.yaml',)
         gs.album = {}
-
+        self.now = 0
 
         gs.models = {}
         gs.result = ""
@@ -137,12 +138,15 @@ class GenerateWindow(QObject):
         self.timeline = Timeline()
         self.animDials = AnimDials()
         self.animKeys = AnimKeys()
-
-        #app2  = qapp(sys.argv)
         #self.nodes = NodeEditorWindow()
         #self.nodes.nodeeditor.addNodes()
 
-        #wnd.show()
+        self.w.dynaimage.w.prevFrame.clicked.connect(self.prevFrame)
+        self.w.dynaimage.w.nextFrame.clicked.connect(self.nextFrame)
+        self.w.dynaimage.w.stopButton.clicked.connect(self.stop_timer)
+        self.w.dynaimage.w.playButton.clicked.connect(self.start_timer)
+
+        self.animDials.w.frames.valueChanged.connect(self.update_timeline)
         self.w.thumbnails.thumbs.itemClicked.connect(self.viewImageClicked)
         self.w.thumbnails.thumbs.itemDoubleClicked.connect(self.tileImageClicked)
         #self.thumbnails.thumbs.addItem(QListWidgetItem(QIcon('frontend/main/splash.png'), "Earth"))
@@ -182,7 +186,6 @@ class GenerateWindow(QObject):
 
 
 
-
         self.animKeys.w.dockWidget.setWindowTitle('Anim Keys')
         self.w.thumbnails.setWindowTitle('Thumbnails')
         self.w.sampler.w.dockWidget.setWindowTitle('Sampler')
@@ -209,9 +212,9 @@ class GenerateWindow(QObject):
         self.livePainter = QPainter()
         self.vpainter["iins"] = QPainter()
         self.tpixmap = QPixmap(512, 512)
-        self.ipixmap = QPixmap(512, 512)
-        self.livePainter.end()
-        self.vpainter["iins"].end()
+
+        #self.livePainter.end()
+        #self.vpainter["iins"].end()
         self.setup_defaults()
     def setup_defaults(self):
         self.animKeys.w.angle.setText("0:(0)")
@@ -229,6 +232,9 @@ class GenerateWindow(QObject):
         self.animKeys.w.noise_sched.setText("0:(0.02)")
         self.animKeys.w.strength_sched.setText("0:(0.65)")
         self.animKeys.w.contrast_sched.setText("0:(1)")
+    def update_timeline(self):
+        self.timeline.timeline.duration = self.animDials.w.frames.value()
+        self.timeline.timeline.update()
     def updateThumbsZoom(self):
         while gs.callbackBusy == True:
             time.sleep(0.1)
@@ -333,6 +339,12 @@ class GenerateWindow(QObject):
             self.txt2img_thread()
 
     def run_deforum(self, progress_callback=None):
+
+        self.currentFrames = []
+        self.renderedFrames = 0
+        self.now = 0
+        #self.videoPreview = True
+
 
         use_init = self.animDials.w.useInit.isChecked()
         adabins = self.animDials.w.adabins.isChecked()
@@ -446,6 +458,8 @@ class GenerateWindow(QObject):
         print("saved_args is", saved_args)
 
     def imageCallback_signal(self, image, *args, **kwargs):
+        self.currentFrames.append(image)
+        self.renderedFrames += 1
         self.image = image
         self.signals.txt2img_finished.connect(self.imageCallback_func)
         self.signals.txt2img_finished.emit()
@@ -457,6 +471,30 @@ class GenerateWindow(QObject):
             self.data2=None
         self.signals.deforum_step.connect(self.deforumstepCallback_func)
         self.signals.deforum_step.emit()
+    def start_timer(self, *args, **kwargs):
+        self.ftimer.timeout.connect(self.imageCallback_func)
+
+        self.videoPreview = True
+        self.ftimer.start(80)
+    def stop_timer(self, *args, **kwargs):
+        self.ftimer.stop()
+        self.videoPreview = False
+    def prevFrame(self, *args, **kwargs):
+        if self.now > 0:
+            self.now -= 2
+            advance = False
+            self.videoPreview = True
+            self.imageCallback_func(advance)
+            self.videoPreview = False
+
+    def nextFrame(self, *args, **kwargs):
+            if self.now < self.renderedFrames:
+                self.now += 1
+                advance = False
+                self.videoPreview = True
+                self.imageCallback_func(advance)
+
+
     @Slot()
     def deforumstepCallback_func(self, *args, **kwargs):
         #print(type(data['x']))
@@ -477,14 +515,30 @@ class GenerateWindow(QObject):
         self.w.statusBar().showMessage("Ready...")
         self.w.thumbnails.thumbs.addItem(QListWidgetItem(QIcon(self.image_path), str(self.w.prompt.w.textEdit.toPlainText())))
 
-    @Slot()
-    def imageCallback_func(self, image=None, seed=None, upscaled=False, use_prefix=None, first_seed=None):
 
-        self.vpainter["iins"].begin(self.ipixmap)
-        qimage = ImageQt(self.image)
-        self.vpainter["iins"].drawImage(QRect(0, 0, 512, 512), qimage)
+
+    @Slot()
+    def imageCallback_func(self, image=None, seed=None, upscaled=False, use_prefix=None, first_seed=None, advance=True):
+        self.painter = QPainter()
+        self.ipixmap = QPixmap(512, 512)
+        self.painter.begin(self.ipixmap)
+        if self.videoPreview == True and self.renderedFrames > 0:
+            qimage = ImageQt(self.currentFrames[self.now])
+            self.painter.drawImage(QRect(0, 0, 512, 512), qimage)
+            if advance == True:
+                self.now += 1
+            if self.now > (self.renderedFrames - 1):
+                self.now = 0
+            self.timeline.timeline.pointerTimePos = self.now
+            self.timeline.timeline.update()
+
+        elif self.renderedFrames > 0 and self.videoPreview == False:
+                qimage = ImageQt(self.image)
+                self.painter.drawImage(QRect(0, 0, 512, 512), qimage)
+
+
         self.w.dynaimage.w.label.setPixmap(self.ipixmap.scaled(512, 512, Qt.AspectRatioMode.KeepAspectRatio))
-        self.vpainter["iins"].end()
+        self.painter.end()
 
 
     def run_txt2img(self, progress_callback=None):
@@ -596,6 +650,7 @@ class GenerateWindow(QObject):
 
         # Execute
         self.threadpool.start(worker)
+        #self.timer()
 
         #progress bar test:
         #self.progress_thread()
@@ -715,18 +770,21 @@ class GenerateWindow(QObject):
         self.threadpool.start(self.liveWorker2)
 
     def liveUpdate(self, data1=None, data2=None):
+        self.update += 1
         self.w.statusBar().showMessage(f"Generating... (step {data2} of {self.steps})")
-
+        self.updateRate = self.w.sizer_count.w.previewSlider.value()
         if self.update >= self.updateRate:
             try:
                 self.update = 0
                 self.test_output(data1, data2)
             except Exception as e:
                 print(f"Exception: {e}")
-                pass
                 self.update = 0
+                pass
+
         else:
-            self.update += 1
+
+            return self.pass_object
         return self.pass_object
 
 

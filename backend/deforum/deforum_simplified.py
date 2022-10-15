@@ -608,7 +608,7 @@ class DeforumGenerator():
         self.noise_schedule = noise_schedule
         self.strength_schedule = strength_schedule
         self.contrast_schedule = contrast_schedule
-        self.step_callback = step_callback
+        self.image_callback = image_callback
         self.show_sample_per_step = show_sample_per_step
         self.diffusion_cadence = diffusion_cadence
         near_plane = near_plane
@@ -768,6 +768,10 @@ class DeforumGenerator():
                     filename = f"{timestring}_{tween_frame_idx:05}.png"
                     cv2.imwrite(os.path.join(outdir, filename),
                                 cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2BGR))
+                    if self.image_callback is not None:
+                        #self.image_callback(Image.open(os.path.join(outdir, filename)))
+                        self.image_callback(Image.fromarray(img.astype(np.uint8)))
+
                     if save_depth_maps:
                         depth_model.save(os.path.join(outdir, f"{timestring}_depth_{tween_frame_idx:05}.png"),
                                          depth)
@@ -826,7 +830,7 @@ class DeforumGenerator():
 
             # sample the diffusion model
             sample, image = self.generate(frame_idx, return_latent=False, return_sample=True)
-            if image_callback is not None:
+            if image_callback is not None and self.diffusion_cadence == 0:
                 image_callback(image, seed, upscaled=False)
 
 
