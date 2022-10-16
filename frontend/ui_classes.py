@@ -17,6 +17,16 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
                            QPalette, QPixmap, QRadialGradient, QTransform)
 
 import concurrent.futures
+class AnimKeyEditor(QObject):
+
+    def __init__(self, *args, **kwargs):
+        loader = QtUiTools.QUiLoader()
+        file = QFile("frontend/ui_widgets/keyframe_editor.ui")
+        file.open(QFile.ReadOnly)
+        self.w = loader.load(file)
+        file.close()
+        #super().__init__(*args, **kwargs)
+        #uic.loadUi("frontend/ui_widgets/sizer_count.ui", self)
 
 class AnimKeys(QObject):
 
@@ -438,6 +448,7 @@ class OurTimeline(QWidget):
         self.edgeGrab = False
         self.scale = None
         self.middleHoverActive = False
+        self.keyFrameList = {}
         self.initUI()
 
     def initUI(self):
@@ -466,7 +477,6 @@ class OurTimeline(QWidget):
         # Draw down line
         qp.setPen(QPen(Qt.darkCyan, 5, Qt.SolidLine))
         qp.drawLine(0, 40, self.width(), 40)
-
         # Draw dash lines
         point = 0
         qp.setPen(QPen(self.textColor))
@@ -482,6 +492,7 @@ class OurTimeline(QWidget):
             qp.drawLine(self.pos, 0, self.pos, 40)
 
         if self.pointerPos is not None:
+            self.pointerTimePos = int(self.pointerTimePos)
             line = QLine(QPoint(self.pointerTimePos/self.getScale(), 40),
                          QPoint(self.pointerTimePos/self.getScale(), self.height()))
             poly = QPolygon([QPoint(self.pointerTimePos/self.getScale() - 10, 20),
@@ -490,6 +501,18 @@ class OurTimeline(QWidget):
         else:
             line = QLine(QPoint(0, 0), QPoint(0, self.height()))
             poly = QPolygon([QPoint(-10, 20), QPoint(10, 20), QPoint(0, 40)])
+
+
+        """for keys in self.keyFrameList:
+            for start in self.keyFrameList[keys].items():
+                if start is not None:
+                    kfbrush = QBrush(Qt.darkRed)
+                    kfStartPoint = int(start) / self.getScale()
+                    scaleMod = 5
+                    kfPoly = QPolygon([QPoint(kfStartPoint - scaleMod, 50), QPoint(kfStartPoint, 45), QPoint(kfStartPoint + scaleMod, 50), QPoint(kfStartPoint, 55)])
+                    qp.setPen(Qt.darkRed)
+                    qp.setBrush(kfbrush)
+                    qp.drawPolygon(kfPoly)"""
 
         # Draw samples
         t = 0
@@ -505,7 +528,7 @@ class OurTimeline(QWidget):
             # Draw sample
             path = QPainterPath()
             qp.setPen(sample.color)
-
+            qp.setBrush(sample.color)
 
 
 
@@ -648,7 +671,9 @@ class OurTimeline(QWidget):
                 sample.color = sample.defColor
                 self.middleHover = False
 
-    def checkEdges(self, x):
+
+
+    def checkEdges(self, x, y=50):
         # Check if user clicked in video sample
         for sample in self.videoSamples:
             if sample.startPos < x < sample.startPos + 24:
@@ -672,11 +697,13 @@ class OurTimeline(QWidget):
                 sample.color = sample.defColor
                 self.edgeGrab = False
 
+
     # Get time string from seconds
     def get_time_string(self, seconds):
         m, s = divmod(seconds, 60)
         h, m = divmod(m, 60)
-        return "%02d:%02d:%02d" % (h, m, s)
+        #return "%02d:%02d:%02d" % (h, m, s)
+        return "%05d" % (seconds)
 
 
     # Get scale from length

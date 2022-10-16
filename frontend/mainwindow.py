@@ -35,6 +35,51 @@ from ldm.generate import Generate
 
 from PySide6.QtCore import *
 
+class Keyframes(object):
+    def __init__(self):
+        self.keyframes = {}
+        super().__init__()
+
+    def addKeyframe(self, timePosition, valueType, value):
+        if valueType not in self.keyframes:
+            self.keyframes[valueType] = {}
+
+        if timePosition is not None:
+            self.tempList = {}
+
+            self.keyframes[valueType][timePosition] = {}
+            self.keyframes[valueType][timePosition]["keyframe"] = value
+            #print(type(self.keyframes))
+            #print(type(self.keyframes[valueType]))
+            #print(type(self.keyframes[valueType][str(timePosition)]))
+            #print(type(self.keyframes[valueType][str(timePosition)]["keyframe"]))
+
+        if self.keyframes[valueType] != {}:
+            self.keyframes[valueType] = dict(sorted(self.keyframes[valueType].items()))
+
+
+        for keyframe in self.keyframes[valueType].items():
+                print(keyframe)
+                print(type(keyframe))
+
+                self.templist[keyframe] = self.keyframes[valueType][keyframe]["keyframe"]
+                print(self.templist[keyframe])
+                print(f"new keyframe: {self.keyframes[valueType][keyframe]['keyframe']}")
+                #print(self.keyframes[valueType])
+                #print(self.keyframes[valueType][keyframe])
+                #print(self.keyframes[valueType][keyframe]["keyframe"])
+                #self.tempList[timePosition]["keyframe"] = keyframe[timePosition]["keyframe"]
+
+            #print(self.keyframes[valueType][i])\
+        #print(self.tempList)
+        for keys in self.tempList.items():
+            print(keys)
+            print(keys[0])
+            print(keys[1])
+
+        #print(self.keyframes[valueType])
+
+
 
 
 class Callbacks(QObject):
@@ -52,8 +97,13 @@ class GenerateWindow(QObject):
     file.close()
     def __init__(self, *args, **kwargs):
         super(GenerateWindow, self).__init__(*args, **kwargs)
+
         self.ftimer = QTimer(self)
         self.signals = Callbacks()
+        self.kf = Keyframes()
+
+
+
 
         settings.load_settings_json()
         self.videoPreview = False
@@ -71,7 +121,6 @@ class GenerateWindow(QObject):
 
         self.deforum.signals = Callbacks()
         self.deforum.signals.deforum_finished.connect(self.reenableRunButton)
-
 
         #self.w.thumbnails.thumbs.installEventFilter(self)
         self.w.statusBar().showMessage('Ready')
@@ -122,14 +171,10 @@ class GenerateWindow(QObject):
 
     def home(self):
         self.w.thumbnails = Thumbnails()
-        #self.mainPainter = QPainter()
-        #self.w.initPainter(self.mainPainter)
-        #self.mainPainter.begin()
         self.threadpool = QThreadPool()
         self.w.preview = Preview()
         self.w.sizer_count = SizerCount()
         self.w.sampler = Sampler()
-        #self.runner = Runner()
         self.w.anim = Anim()
         self.w.prompt = Prompt()
         self.w.dynaview = Dynaview()
@@ -137,19 +182,22 @@ class GenerateWindow(QObject):
         self.timeline = Timeline()
         self.animDials = AnimDials()
         self.animKeys = AnimKeys()
+        self.animKeyEditor = AnimKeyEditor()
+
         #self.nodes = NodeEditorWindow()
         #self.nodes.nodeeditor.addNodes()
         self.timeline.timeline.update()
+
         self.w.dynaimage.w.prevFrame.clicked.connect(self.prevFrame)
         self.w.dynaimage.w.nextFrame.clicked.connect(self.nextFrame)
         self.w.dynaimage.w.stopButton.clicked.connect(self.stop_timer)
         self.w.dynaimage.w.playButton.clicked.connect(self.start_timer)
+        self.animKeyEditor.w.keyButton.clicked.connect(self.addCurrentFrame)
 
         self.animDials.w.frames.valueChanged.connect(self.update_timeline)
+
         self.w.thumbnails.thumbs.itemClicked.connect(self.viewImageClicked)
         self.w.thumbnails.thumbs.itemDoubleClicked.connect(self.tileImageClicked)
-        #self.thumbnails.thumbs.addItem(QListWidgetItem(QIcon('frontend/main/splash.png'), "Earth"))
-
 
         self.w.sizer_count.w.heightNumber.display(str(self.w.sizer_count.w.heightSlider.value()))
         self.w.sizer_count.w.widthNumber.display(str(self.w.sizer_count.w.widthSlider.value()))
@@ -160,6 +208,7 @@ class GenerateWindow(QObject):
 
         #self.w.setCentralWidget(self.w.preview.w)
         self.w.setCentralWidget(self.w.dynaimage.w)
+
         self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.w.sampler.w.dockWidget)
         self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.w.sizer_count.w.dockWidget)
         self.w.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.w.prompt.w.dockWidget)
@@ -167,29 +216,16 @@ class GenerateWindow(QObject):
         self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.thumbnails)
         self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.animDials.w.dockWidget)
         self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.animKeys.w.dockWidget)
-
         self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.dynaview.w.dockWidget)
-        #self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.dynaimage.w.dockWidget)
-        #self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.preview.w.dockWidget)
+        self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.animKeyEditor.w.dockWidget)
 
         self.w.dynaview.w.setMinimumSize(QtCore.QSize(256, 256))
-        #self.w.tabifyDockWidget(self.w.thumbnails, self.w.sampler.w.dockWidget)
 
         self.w.tabifyDockWidget( self.w.sizer_count.w.dockWidget, self.animDials.w.dockWidget)
         self.w.tabifyDockWidget(self.animDials.w.dockWidget, self.w.sampler.w.dockWidget)
         self.w.tabifyDockWidget(self.w.sampler.w.dockWidget, self.animKeys.w.dockWidget)
-
-        #self.w.tabifyDockWidget(self.w.preview.w.dockWidget, self.w.thumbnails)
-        #self.w.tabifyDockWidget(self.w.dynaview.w.dockWidget, self.w.dynaimage.w.dockWidget)
         self.w.tabifyDockWidget(self.w.thumbnails, self.w.dynaview.w.dockWidget)
-
-
         self.w.tabifyDockWidget(self.timeline, self.w.prompt.w.dockWidget)
-
-        self.w.dynaview.w.dockWidget.setMinimumSize(512, 0)
-
-
-
 
         self.animKeys.w.dockWidget.setWindowTitle('Anim Keys')
         self.w.thumbnails.setWindowTitle('Thumbnails')
@@ -201,6 +237,7 @@ class GenerateWindow(QObject):
         self.w.dynaview.w.dockWidget.setWindowTitle('Tensor Preview')
         self.w.dynaimage.w.dockWidget.setWindowTitle('Image Preview')
         self.w.preview.w.setWindowTitle('Canvas')
+
         self.vpainter = {}
         self.w.preview.w.scene = QGraphicsScene()
         self.w.preview.w.graphicsView.setScene(self.w.preview.w.scene)
@@ -210,7 +247,6 @@ class GenerateWindow(QObject):
         self.w.thumbnails.thumbsZoom.valueChanged.connect(self.updateThumbsZoom)
         self.w.thumbnails.refresh.clicked.connect(self.load_history)
         self.w.imageItem = QGraphicsPixmapItem()
-        #self.w.imageItem.pixmap().fill(Qt.white)
         self.newPixmap = {}
         self.tpixmap = {}
         self.updateRate = self.w.sizer_count.w.stepsSlider.value()
@@ -218,9 +254,31 @@ class GenerateWindow(QObject):
         self.vpainter["iins"] = QPainter()
         self.tpixmap = QPixmap(512, 512)
 
-        #self.livePainter.end()
-        #self.vpainter["iins"].end()
         self.setup_defaults()
+
+
+        #KeyFrame mechanism test
+        #self.kf.addKeyframe(self.timeline.timeline.pointerTimePos, "test", 10)
+
+    def addCurrentFrame(self):
+        self.value = self.animKeyEditor.w.valueText.toPlainText()
+        self.selection = "Contrast"
+        #print(self.timeline.timeline.width)
+        #scale = self.timeline.timeline.getScale()
+        #timepos = self.timeline.timeline.duration / (self.timeline.timeline.pointerTimePos / scale)
+        timepos = int(self.timeline.timeline.pointerTimePos)
+        #print(scale)
+        print("START OF DEBUG")
+        print(f"pointer pos {self.timeline.timeline.pointerTimePos}")
+        #print(f"scale {scale}")
+        print(f"duration {self.timeline.timeline.duration}")
+        print(f"timepos {timepos}")
+        #print(f"{}")
+        self.kf.addKeyframe(timepos, self.selection, self.value)
+        self.timeline.timeline.keyFrameList = self.kf.tempList
+        self.timeline.timeline.update()
+
+
     def setup_defaults(self):
         self.animKeys.w.angle.setText("0:(0)")
         self.animKeys.w.zoom.setText("0:(0)")
