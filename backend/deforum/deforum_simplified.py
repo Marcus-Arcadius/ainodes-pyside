@@ -2,6 +2,7 @@
 import json
 import random
 import re
+import subprocess
 import sys
 import time
 import traceback
@@ -11,6 +12,7 @@ import numpy as np
 import pandas as pd
 import torch, os
 from PIL import Image
+from PySide6.QtCore import Slot, Signal
 from einops import rearrange, repeat
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
@@ -274,12 +276,14 @@ class DeforumGenerator():
                 adabins = False,
                 clear_latent = False,
                 clear_sample = False,
+                shouldStop = False,
                 *args,
                 **kwargs
                 ):
 
         #super().__init__(*args, **kwargs)
-
+        self.shouldStop = shouldStop
+        self.reenable_signal = Signal()
         self.gs = gs
         self.prompts = prompts
         self.animation_prompts = animation_prompts
@@ -308,7 +312,6 @@ class DeforumGenerator():
         self.seed_behavior = seed_behavior
         self.make_grid = make_grid
         self.grid_rows = grid_rows
-        self.outdir = outdir
         self.use_init = use_init
         self.strength = strength
         self.strength_0_no_init = strength_0_no_init
@@ -389,6 +392,9 @@ class DeforumGenerator():
         self.clear_latent = clear_latent
         self.clear_sample = clear_sample
 
+    @Slot()
+    def setStop(self):
+        self.shouldStop = True
 
 
 
@@ -468,6 +474,32 @@ class DeforumGenerator():
 
 
         #print(f"We should have a translation series of 10: {gs.translation_z_series}")
+    def produce_video(self, image_path, mp4_path, max_frames, fps=12):
+        print(f"{image_path} -> {mp4_path}")
+
+        # make video
+        cmd = [
+            'ffmpeg',
+            '-y',
+            '-vcodec', 'png',
+            '-r', str(fps),
+            '-start_number', str(0),
+            '-i', image_path,
+            '-frames:v', str(max_frames),
+            '-c:v', 'libx264',
+            '-vf',
+            f'fps={fps}',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '17',
+            '-preset', 'veryslow',
+            mp4_path
+        ]
+        print(cmd)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate()
+        if process.returncode != 0:
+            print(stderr)
+            raise RuntimeError(stderr)
 
     def render_animation(self,
                          image_callback = None,
@@ -611,11 +643,14 @@ class DeforumGenerator():
         self.image_callback = image_callback
         self.show_sample_per_step = show_sample_per_step
         self.diffusion_cadence = diffusion_cadence
+        self.outdir = f"{outdir}/{batch_name}_{random.randint(1111, 9999)}"
+
         near_plane = near_plane
         far_plane = far_plane
         fov = fov
         sampling_mode = sampling_mode
         padding_mode = padding_mode
+        outdir = self.outdir
 
 
         if self.clear_latent == True:
@@ -704,7 +739,7 @@ class DeforumGenerator():
             last_frame = start_frame - 1
             if turbo_steps > 1:
                 last_frame -= last_frame % turbo_steps
-            path = os.path.join(outdir, f"{timestring}_{last_frame:05}.png")
+            path = os.path.join(outdir, f"{self.batch_name}_{timestring}_{last_frame:05}.png")
             img = cv2.imread(path)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             prev_sample = sample_from_cv2(img)
@@ -718,148 +753,160 @@ class DeforumGenerator():
         self.n_samples = 1
         frame_idx = start_frame
         while frame_idx < max_frames:
-            print(f"Rendering animation frame {frame_idx} of {max_frames}")
-            noise = gs.noise_schedule_series[frame_idx]
-            strength = gs.strength_schedule_series[frame_idx]
+            if not self.shouldStop:
+                print(f"Rendering animation frame {frame_idx} of {max_frames}")
+                noise = gs.noise_schedule_series[frame_idx]
+                strength = gs.strength_schedule_series[frame_idx]
 
-            #print(f'keys: {keys}')
-            #print(gs.contrast_schedule_series)
-            #print(gs.contrast_schedule_series[frame_idx])
+                #print(f'keys: {keys}')
+                #print(gs.contrast_schedule_series)
+                #print(gs.contrast_schedule_series[frame_idx])
 
 
-            contrast = gs.contrast_schedule_series[frame_idx]
-            depth = None
+                contrast = gs.contrast_schedule_series[frame_idx]
+                depth = None
 
-            # emit in-between frames
-            if turbo_steps > 1:
-                tween_frame_start_idx = max(0, frame_idx - turbo_steps)
-                for tween_frame_idx in range(tween_frame_start_idx, frame_idx):
-                    self.torch_gc()
-                    tween = float(tween_frame_idx - tween_frame_start_idx + 1) / float(
-                        frame_idx - tween_frame_start_idx)
-                    print(f"  creating in between frame {tween_frame_idx} tween:{tween:0.2f}")
+                # emit in-between frames
+                if turbo_steps > 1:
+                    tween_frame_start_idx = max(0, frame_idx - turbo_steps)
+                    for tween_frame_idx in range(tween_frame_start_idx, frame_idx):
+                        self.torch_gc()
+                        tween = float(tween_frame_idx - tween_frame_start_idx + 1) / float(
+                            frame_idx - tween_frame_start_idx)
+                        print(f"  creating in between frame {tween_frame_idx} tween:{tween:0.2f}")
 
-                    advance_prev = turbo_prev_image is not None and tween_frame_idx > turbo_prev_frame_idx
-                    advance_next = tween_frame_idx > turbo_next_frame_idx
+                        advance_prev = turbo_prev_image is not None and tween_frame_idx > turbo_prev_frame_idx
+                        advance_next = tween_frame_idx > turbo_next_frame_idx
 
-                    if depth_model is not None:
-                        assert (turbo_next_image is not None)
-                        depth = depth_model.predict(turbo_next_image, midas_weight)
+                        if depth_model is not None:
+                            assert (turbo_next_image is not None)
+                            depth = depth_model.predict(turbo_next_image, midas_weight)
 
+                        if animation_mode == '2D':
+                            if advance_prev:
+                                turbo_prev_image = anim_frame_warp_2d(turbo_prev_image, gs, tween_frame_idx, W, H, flip_2d_perspective, border)
+                            if advance_next:
+                                turbo_next_image = anim_frame_warp_2d(turbo_next_image, gs, tween_frame_idx, W, H, flip_2d_perspective, border)
+                        else:  # '3D'
+                            if advance_prev:
+                                turbo_prev_image = anim_frame_warp_3d(turbo_prev_image, depth, gs, tween_frame_idx, near_plane, far_plane,
+                                                                      fov, sampling_mode, padding_mode)
+                            if advance_next:
+                                turbo_next_image = anim_frame_warp_3d(turbo_next_image, depth, gs, tween_frame_idx, near_plane, far_plane,
+                                                   fov, sampling_mode, padding_mode)
+                        turbo_prev_frame_idx = turbo_next_frame_idx = tween_frame_idx
+
+                        if turbo_prev_image is not None and tween < 1.0:
+                            img = turbo_prev_image * (1.0 - tween) + turbo_next_image * tween
+                        else:
+                            img = turbo_next_image
+
+                        filename = f"{self.batch_name}_{timestring}_{tween_frame_idx:05}.png"
+                        cv2.imwrite(os.path.join(outdir, filename),
+                                    cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2BGR))
+                        if self.image_callback is not None:
+                            #self.image_callback(Image.open(os.path.join(outdir, filename)))
+                            self.image_callback(Image.fromarray(img.astype(np.uint8)))
+
+                        if save_depth_maps:
+                            depth_model.save(os.path.join(outdir, f"{timestring}_depth_{tween_frame_idx:05}.png"),
+                                             depth)
+                    if turbo_next_image is not None:
+                        prev_sample = sample_from_cv2(turbo_next_image)
+
+                # apply transforms to previous frame
+                if prev_sample is not None:
                     if animation_mode == '2D':
-                        if advance_prev:
-                            turbo_prev_image = anim_frame_warp_2d(turbo_prev_image, gs, tween_frame_idx, W, H, flip_2d_perspective, border)
-                        if advance_next:
-                            turbo_next_image = anim_frame_warp_2d(turbo_next_image, gs, tween_frame_idx, W, H, flip_2d_perspective, border)
+                        prev_img = anim_frame_warp_2d(sample_to_cv2(prev_sample), gs, frame_idx, W, H, flip_2d_perspective, border)
                     else:  # '3D'
-                        if advance_prev:
-                            turbo_prev_image = anim_frame_warp_3d(turbo_prev_image, depth, gs, tween_frame_idx, near_plane, far_plane,
-                                                                  fov, sampling_mode, padding_mode)
-                        if advance_next:
-                            turbo_next_image = anim_frame_warp_3d(turbo_next_image, depth, gs, tween_frame_idx, near_plane, far_plane,
-                                               fov, sampling_mode, padding_mode)
-                    turbo_prev_frame_idx = turbo_next_frame_idx = tween_frame_idx
+                        prev_img_cv2 = sample_to_cv2(prev_sample)
+                        depth = depth_model.predict(prev_img_cv2, midas_weight) if depth_model else None
+                        prev_img = anim_frame_warp_3d(prev_img_cv2, depth, gs, frame_idx, near_plane, far_plane,
+                                                      fov, sampling_mode, padding_mode)
 
-                    if turbo_prev_image is not None and tween < 1.0:
-                        img = turbo_prev_image * (1.0 - tween) + turbo_next_image * tween
+                    # apply color matching
+                    if color_coherence != 'None':
+                        if color_match_sample is None:
+                            color_match_sample = prev_img.copy()
+                        else:
+                            prev_img = maintain_colors(prev_img, color_match_sample, color_coherence)
+
+                    # apply scaling
+                    contrast_sample = prev_img * contrast
+                    # apply frame noising
+                    noised_sample = add_noise(sample_from_cv2(contrast_sample), noise)
+
+                    # use transformed previous frame as init for current
+                    self.use_init = True
+                    half_precision = True
+                    if half_precision:
+                        self.init_sample = noised_sample.half().to('cuda')
                     else:
-                        img = turbo_next_image
+                        self.init_sample = noised_sample.to('cuda')
+                    self.strength = max(0.0, min(1.0, strength))
 
-                    filename = f"{timestring}_{tween_frame_idx:05}.png"
-                    cv2.imwrite(os.path.join(outdir, filename),
-                                cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2BGR))
-                    if self.image_callback is not None:
-                        #self.image_callback(Image.open(os.path.join(outdir, filename)))
-                        self.image_callback(Image.fromarray(img.astype(np.uint8)))
+                # grab prompt for current frame
+                self.prompt = prompt_series[frame_idx]
+                print(f"{prompt} {seed}")
+                if not using_vid_init:
+                    print(f"Angle: {gs.angle_series[frame_idx]} Zoom: {gs.zoom_series[frame_idx]}")
+                    print(
+                        f"Tx: {gs.translation_x_series[frame_idx]} Ty: {gs.translation_y_series[frame_idx]} Tz: {gs.translation_z_series[frame_idx]}")
+                    print(
+                        f"Rx: {gs.rotation_3d_x_series[frame_idx]} Ry: {gs.rotation_3d_y_series[frame_idx]} Rz: {gs.rotation_3d_z_series[frame_idx]}")
 
-                    if save_depth_maps:
-                        depth_model.save(os.path.join(outdir, f"{timestring}_depth_{tween_frame_idx:05}.png"),
-                                         depth)
-                if turbo_next_image is not None:
-                    prev_sample = sample_from_cv2(turbo_next_image)
+                # grab init image for current frame
+                if using_vid_init:
+                    init_frame = os.path.join(outdir, 'inputframes', f"{frame_idx + 1:05}.jpg")
+                    print(f"Using video init frame {init_frame}")
+                    self.init_image = init_frame
+                    if use_mask_video:
+                        mask_frame = os.path.join(outdir, 'maskframes', f"{frame_idx + 1:05}.jpg")
+                        self.mask_file = mask_frame
 
-            # apply transforms to previous frame
-            if prev_sample is not None:
-                if animation_mode == '2D':
-                    prev_img = anim_frame_warp_2d(sample_to_cv2(prev_sample), gs, frame_idx, W, H, flip_2d_perspective, border)
-                else:  # '3D'
-                    prev_img_cv2 = sample_to_cv2(prev_sample)
-                    depth = depth_model.predict(prev_img_cv2, midas_weight) if depth_model else None
-                    prev_img = anim_frame_warp_3d(prev_img_cv2, depth, gs, frame_idx, near_plane, far_plane,
-                                                  fov, sampling_mode, padding_mode)
+                # sample the diffusion model
+                sample, image = self.generate(frame_idx, return_latent=False, return_sample=True)
+                if image_callback is not None and self.diffusion_cadence == 0:
+                    image_callback(image, seed, upscaled=False)
 
-                # apply color matching
-                if color_coherence != 'None':
-                    if color_match_sample is None:
-                        color_match_sample = prev_img.copy()
-                    else:
-                        prev_img = maintain_colors(prev_img, color_match_sample, color_coherence)
 
-                # apply scaling
-                contrast_sample = prev_img * contrast
-                # apply frame noising
-                noised_sample = add_noise(sample_from_cv2(contrast_sample), noise)
+                if not using_vid_init:
+                    prev_sample = sample
 
-                # use transformed previous frame as init for current
-                self.use_init = True
-                half_precision = True
-                if half_precision:
-                    self.init_sample = noised_sample.half().to('cuda')
+                if turbo_steps > 1:
+                    turbo_prev_image, turbo_prev_frame_idx = turbo_next_image, turbo_next_frame_idx
+                    turbo_next_image, turbo_next_frame_idx = sample_to_cv2(sample, type=np.float32), frame_idx
+                    frame_idx += turbo_steps
                 else:
-                    self.init_sample = noised_sample.to('cuda')
-                self.strength = max(0.0, min(1.0, strength))
+                    filename = f"{self.batch_name}_{timestring}_{frame_idx:05}.png"
+                    image.save(os.path.join(outdir, filename))
+                    if save_depth_maps:
+                        if depth is None:
+                            depth = depth_model.predict(sample_to_cv2(sample), self)
+                        depth_model.save(os.path.join(outdir, f"{self.batch_name}_{timestring}_depth_{frame_idx:05}.png"), depth)
+                    frame_idx += 1
 
-            # grab prompt for current frame
-            self.prompt = prompt_series[frame_idx]
-            print(f"{prompt} {seed}")
-            if not using_vid_init:
-                print(f"Angle: {gs.angle_series[frame_idx]} Zoom: {gs.zoom_series[frame_idx]}")
-                print(
-                    f"Tx: {gs.translation_x_series[frame_idx]} Ty: {gs.translation_y_series[frame_idx]} Tz: {gs.translation_z_series[frame_idx]}")
-                print(
-                    f"Rx: {gs.rotation_3d_x_series[frame_idx]} Ry: {gs.rotation_3d_y_series[frame_idx]} Rz: {gs.rotation_3d_z_series[frame_idx]}")
+                # display.clear_output(wait=True)
+                # display.display(image)
 
-            # grab init image for current frame
-            if using_vid_init:
-                init_frame = os.path.join(outdir, 'inputframes', f"{frame_idx + 1:05}.jpg")
-                print(f"Using video init frame {init_frame}")
-                self.init_image = init_frame
-                if use_mask_video:
-                    mask_frame = os.path.join(outdir, 'maskframes', f"{frame_idx + 1:05}.jpg")
-                    self.mask_file = mask_frame
-
-            # sample the diffusion model
-            sample, image = self.generate(frame_idx, return_latent=False, return_sample=True)
-            if image_callback is not None and self.diffusion_cadence == 0:
-                image_callback(image, seed, upscaled=False)
-
-
-            if not using_vid_init:
-                prev_sample = sample
-
-            if turbo_steps > 1:
-                turbo_prev_image, turbo_prev_frame_idx = turbo_next_image, turbo_next_frame_idx
-                turbo_next_image, turbo_next_frame_idx = sample_to_cv2(sample, type=np.float32), frame_idx
-                frame_idx += turbo_steps
+                seed = next_seed(self)
+                image_path = os.path.join(self.outdir, f"{self.batch_name}_{timestring}_%05d.png")
+                mp4_path = os.path.join(self.outdir, f"{self.batch_name}_{timestring}.mp4")
+                self.signals.deforum_finished.emit()
             else:
-                filename = f"{timestring}_{frame_idx:05}.png"
-                image.save(os.path.join(outdir, filename))
-                if save_depth_maps:
-                    if depth is None:
-                        depth = depth_model.predict(sample_to_cv2(sample), self)
-                    depth_model.save(os.path.join(outdir, f"{timestring}_depth_{frame_idx:05}.png"), depth)
-                frame_idx += 1
-
-            # display.clear_output(wait=True)
-            # display.display(image)
-
-            seed = next_seed(self)
+                self.signals.deforum_finished.emit()
+        #max_frames = frame_idx
+        self.produce_video(image_path, mp4_path, max_frames)
         try:
             del depth_model
         except:
             pass
-        del self.gs.models["midas_model"]
-        del self.gs.models["adabins"]
+        try:
+
+            del self.gs.models["midas_model"]
+            del self.gs.models["adabins"]
+        except:
+            pass
         self.torch_gc()
 
     def generate(self, frame = 0, return_latent=False, return_sample=False, return_c=False):

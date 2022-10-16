@@ -63,16 +63,15 @@ class GenerateWindow(QObject):
             weights     = 'models/sd-v1-4.ckpt',
             config     = 'configs/stable-diffusion/v1-inference.yaml',)
         gs.album = {}
-        self.now = 0
-
         gs.models = {}
         gs.result = ""
-        gs.callbackBusy = False
-
         gs.album = getLatestGeneratedImagesFromPath()
-
-
+        self.now = 0
         self.home()
+
+        self.deforum.signals = Callbacks()
+        self.deforum.signals.deforum_finished.connect(self.reenableRunButton)
+
 
         #self.w.thumbnails.thumbs.installEventFilter(self)
         self.w.statusBar().showMessage('Ready')
@@ -140,7 +139,7 @@ class GenerateWindow(QObject):
         self.animKeys = AnimKeys()
         #self.nodes = NodeEditorWindow()
         #self.nodes.nodeeditor.addNodes()
-
+        self.timeline.timeline.update()
         self.w.dynaimage.w.prevFrame.clicked.connect(self.prevFrame)
         self.w.dynaimage.w.nextFrame.clicked.connect(self.nextFrame)
         self.w.dynaimage.w.stopButton.clicked.connect(self.stop_timer)
@@ -151,6 +150,7 @@ class GenerateWindow(QObject):
         self.w.thumbnails.thumbs.itemDoubleClicked.connect(self.tileImageClicked)
         #self.thumbnails.thumbs.addItem(QListWidgetItem(QIcon('frontend/main/splash.png'), "Earth"))
 
+
         self.w.sizer_count.w.heightNumber.display(str(self.w.sizer_count.w.heightSlider.value()))
         self.w.sizer_count.w.widthNumber.display(str(self.w.sizer_count.w.widthSlider.value()))
         self.w.sizer_count.w.samplesNumber.display(str(self.w.sizer_count.w.samplesSlider.value()))
@@ -158,26 +158,31 @@ class GenerateWindow(QObject):
         self.w.sizer_count.w.stepsNumber.display(str(self.w.sizer_count.w.stepsSlider.value()))
         self.w.sizer_count.w.scaleNumber.display(str(self.w.sizer_count.w.scaleSlider.value()))
 
-        self.w.setCentralWidget(self.w.preview.w)
+        #self.w.setCentralWidget(self.w.preview.w)
+        self.w.setCentralWidget(self.w.dynaimage.w)
         self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.w.sampler.w.dockWidget)
         self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.w.sizer_count.w.dockWidget)
         self.w.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.w.prompt.w.dockWidget)
         self.w.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.timeline)
-        self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.w.thumbnails)
+        self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.thumbnails)
         self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.animDials.w.dockWidget)
         self.w.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.animKeys.w.dockWidget)
 
         self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.dynaview.w.dockWidget)
-        self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.dynaimage.w.dockWidget)
+        #self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.dynaimage.w.dockWidget)
+        #self.w.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.w.preview.w.dockWidget)
 
-        self.w.dynaview.w.setMinimumSize(QtCore.QSize(512, 512))
+        self.w.dynaview.w.setMinimumSize(QtCore.QSize(256, 256))
         #self.w.tabifyDockWidget(self.w.thumbnails, self.w.sampler.w.dockWidget)
 
         self.w.tabifyDockWidget( self.w.sizer_count.w.dockWidget, self.animDials.w.dockWidget)
         self.w.tabifyDockWidget(self.animDials.w.dockWidget, self.w.sampler.w.dockWidget)
         self.w.tabifyDockWidget(self.w.sampler.w.dockWidget, self.animKeys.w.dockWidget)
 
-        self.w.tabifyDockWidget(self.w.thumbnails, self.w.dynaimage.w.dockWidget)
+        #self.w.tabifyDockWidget(self.w.preview.w.dockWidget, self.w.thumbnails)
+        #self.w.tabifyDockWidget(self.w.dynaview.w.dockWidget, self.w.dynaimage.w.dockWidget)
+        self.w.tabifyDockWidget(self.w.thumbnails, self.w.dynaview.w.dockWidget)
+
 
         self.w.tabifyDockWidget(self.timeline, self.w.prompt.w.dockWidget)
 
@@ -447,10 +452,13 @@ class GenerateWindow(QObject):
                                         strength_schedule = strength_schedule,
                                         contrast_schedule = contrast_schedule,
                                         diffusion_cadence=cadence,
+                                        shouldStop=False,
 
                                         )
         self.stop_painters()
         #self.w.thumbnails.setUpdatesEnabled(True)
+        self.signals.txt2img_additem.connect(self.reenableRunButton)
+        self.signals.txt2img_additem.emit()
 
     def deforumTest(self, *args, **kwargs):
         saved_args = locals()
@@ -530,7 +538,7 @@ class GenerateWindow(QObject):
             if self.now > (self.renderedFrames - 1):
                 self.now = 0
             self.timeline.timeline.pointerTimePos = self.now
-            self.timeline.timeline.update()
+
 
         elif self.renderedFrames > 0 and self.videoPreview == False:
                 qimage = ImageQt(self.image)
@@ -638,11 +646,24 @@ class GenerateWindow(QObject):
                     #print("We did set the image")
                     #
                     #self.get_pic(clear=False)
-
+        self.signals.txt2img_additem.connect(self.reenableRunButton)
+        self.signals.txt2img_additem.emit()
         #self.stop_painters()
-
+    @Slot()
+    def reenableRunButton(self):
+        try:
+            self.w.prompt.w.runButton.setEnabled(True)
+        except:
+            pass
+        try:
+            self.stop_timer()
+        except:
+            pass
     def deforum_thread(self):
         #self.w.thumbnails.setUpdatesEnabled(False)
+
+        self.w.prompt.w.runButton.setEnabled(False)
+        QTimer.singleShot(100, lambda: self.pass_object())
 
         worker = Worker(self.run_deforum)
         #worker.signals.progress.connect(self.testThread)

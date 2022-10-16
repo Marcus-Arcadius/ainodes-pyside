@@ -135,3 +135,8 @@ src/pytorch3d-lite/
 /src/MiDaS/
 /src/pytorch3d-lite/
 *.png
+*.mp4
+*.sha256
+*.ckpt
+*.pt
+*.rar
