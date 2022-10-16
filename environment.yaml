@@ -32,3 +32,4 @@ dependencies:
     - -e git+https://github.com/lstein/k-diffusion.git@master#egg=k-diffusion
     - -e git+https://github.com/lstein/GFPGAN@fix-dark-cast-images#egg=gfpgan
     - -e .
+    - numexpr
