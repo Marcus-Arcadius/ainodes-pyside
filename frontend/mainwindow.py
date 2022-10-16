@@ -57,18 +57,13 @@ class Keyframes(object):
         if self.keyframes[valueType] != {}:
             self.keyframes[valueType] = dict(sorted(self.keyframes[valueType].items()))
 
+        var = 0
+        for key, value in self.keyframes[valueType].items():
 
-        for keyframe in self.keyframes[valueType].items():
-                print(keyframe)
-                print(type(keyframe))
-
-                self.templist[keyframe] = self.keyframes[valueType][keyframe]["keyframe"]
-                print(self.templist[keyframe])
-                print(f"new keyframe: {self.keyframes[valueType][keyframe]['keyframe']}")
-                #print(self.keyframes[valueType])
-                #print(self.keyframes[valueType][keyframe])
-                #print(self.keyframes[valueType][keyframe]["keyframe"])
-                #self.tempList[timePosition]["keyframe"] = keyframe[timePosition]["keyframe"]
+                tup = (key, value)
+                self.tempList[var] = tup
+                var += 1
+                print(self.tempList)
 
             #print(self.keyframes[valueType][i])\
         #print(self.tempList)
@@ -76,6 +71,7 @@ class Keyframes(object):
             print(keys)
             print(keys[0])
             print(keys[1])
+            print(keys[1][1]['keyframe'])
 
         #print(self.keyframes[valueType])
 
@@ -84,10 +80,10 @@ class Keyframes(object):
 
 class Callbacks(QObject):
     txt2img_step = Signal()
-    txt2img_additem = Signal()
-    txt2img_finished = Signal()
+    reenable_runbutton = Signal()
+    txt2img_image_cb = Signal()
     deforum_step = Signal()
-    deforum_finished = Signal()
+    deforum_image_cb = Signal()
 
 class GenerateWindow(QObject):
     loader = QtUiTools.QUiLoader()
@@ -120,9 +116,12 @@ class GenerateWindow(QObject):
         self.home()
 
         self.deforum.signals = Callbacks()
-        self.deforum.signals.deforum_finished.connect(self.reenableRunButton)
+        self.signals.reenable_runbutton.connect(self.reenableRunButton)
+        self.signals.txt2img_image_cb.connect(self.imageCallback_func)
+        self.signals.deforum_step.connect(self.deforumstepCallback_func)
+        self.signals.deforum_image_cb.connect(self.add_image_to_thumbnail)
 
-        #self.w.thumbnails.thumbs.installEventFilter(self)
+    #self.w.thumbnails.thumbs.installEventFilter(self)
         self.w.statusBar().showMessage('Ready')
         self.w.progressBar = QProgressBar()
 
@@ -515,8 +514,7 @@ class GenerateWindow(QObject):
                                         )
         self.stop_painters()
         #self.w.thumbnails.setUpdatesEnabled(True)
-        self.signals.txt2img_additem.connect(self.reenableRunButton)
-        self.signals.txt2img_additem.emit()
+        self.signals.reenable_runbutton.emit()
 
     def deforumTest(self, *args, **kwargs):
         saved_args = locals()
@@ -527,15 +525,15 @@ class GenerateWindow(QObject):
         self.currentFrames.append(image)
         self.renderedFrames += 1
         self.image = image
-        self.signals.txt2img_finished.connect(self.imageCallback_func)
-        self.signals.txt2img_finished.emit()
+
+        self.signals.txt2img_image_cb.emit()
     def deforumstepCallback_signal(self, data, data2=None, *args, **kwargs):
         self.data = data
         if data2 is not None:
             self.data2=data2
         else:
             self.data2=None
-        self.signals.deforum_step.connect(self.deforumstepCallback_func)
+
         self.signals.deforum_step.emit()
     def start_timer(self, *args, **kwargs):
         self.ftimer.timeout.connect(self.imageCallback_func)
@@ -699,13 +697,11 @@ class GenerateWindow(QObject):
                     output = f'outputs/{filename}.png'
                     row[0].save(output)
                     self.image_path = output
-                    self.signals.txt2img_additem.connect(self.add_image_to_thumbnail)
-                    self.signals.txt2img_additem.emit()
+                    self.signals.deforum_image_cb.emit()
                     #print("We did set the image")
                     #
                     #self.get_pic(clear=False)
-        self.signals.txt2img_additem.connect(self.reenableRunButton)
-        self.signals.txt2img_additem.emit()
+        self.signals.reenable_runbutton.emit()
         #self.stop_painters()
     @Slot()
     def reenableRunButton(self):

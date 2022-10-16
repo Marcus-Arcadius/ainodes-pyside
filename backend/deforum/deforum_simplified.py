@@ -892,9 +892,9 @@ class DeforumGenerator():
                 seed = next_seed(self)
                 image_path = os.path.join(self.outdir, f"{self.batch_name}_{timestring}_%05d.png")
                 mp4_path = os.path.join(self.outdir, f"{self.batch_name}_{timestring}.mp4")
-                self.signals.deforum_finished.emit()
+                self.signals.deforum_image_cb.emit()
             else:
-                self.signals.deforum_finished.emit()
+                self.signals.deforum_image_cb.emit()
         #max_frames = frame_idx
         self.produce_video(image_path, mp4_path, max_frames)
         try:
