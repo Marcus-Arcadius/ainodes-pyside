@@ -1,18 +1,13 @@
-import gc
 from inspect import isfunction
 import math
 import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 from einops import rearrange, repeat
-import os
-from typing import Any, Optional
-import xformers
-import xformers.ops
-
 
 from ldm.modules.diffusionmodules.util import checkpoint
 
+import psutil
 
 def exists(val):
     return val is not None
@@ -37,7 +32,6 @@ def init_(tensor):
     std = 1 / math.sqrt(dim)
     tensor.uniform_(-std, std)
     return tensor
-
 
 
 # feedforward
@@ -96,7 +90,7 @@ class LinearAttention(nn.Module):
         b, c, h, w = x.shape
         qkv = self.to_qkv(x)
         q, k, v = rearrange(qkv, 'b (qkv heads c) h w -> qkv b heads c (h w)', heads = self.heads, qkv=3)
-        k = k.softmax(dim=-1)
+        k = k.softmax(dim=-1)  
         context = torch.einsum('bhdn,bhen->bhde', k, v)
         out = torch.einsum('bhde,bhdn->bhen', context, q)
         out = rearrange(out, 'b heads c (h w) -> b (heads c) h w', heads=self.heads, h=h, w=w)
@@ -168,25 +162,72 @@ class CrossAttention(nn.Module):
         self.to_q = nn.Linear(query_dim, inner_dim, bias=False)
         self.to_k = nn.Linear(context_dim, inner_dim, bias=False)
         self.to_v = nn.Linear(context_dim, inner_dim, bias=False)
+
         self.to_out = nn.Sequential(
             nn.Linear(inner_dim, query_dim),
             nn.Dropout(dropout)
         )
 
-    def forward(self, x, context=None, mask=None):
-        h = self.heads
+        if not torch.cuda.is_available():
+            mem_av = psutil.virtual_memory().available / (1024**3)
+            if mem_av > 32:
+                self.einsum_op = self.einsum_op_v1
+            elif mem_av > 12:
+                self.einsum_op = self.einsum_op_v2
+            else:
+                self.einsum_op = self.einsum_op_v3   
+            del mem_av 
+        else:
+            self.einsum_op = self.einsum_op_v4
 
-        q_in = self.to_q(x)
-        context = default(context, x)
-        k_in = self.to_k(context)
-        v_in = self.to_v(context)
-        del context, x
+    # mps 64-128 GB
+    def einsum_op_v1(self, q, k, v, r1):
+        if q.shape[1] <= 4096: # for 512x512: the max q.shape[1] is 4096
+            s1 = einsum('b i d, b j d -> b i j', q, k) * self.scale # aggressive/faster: operation in one go
+            s2 = s1.softmax(dim=-1, dtype=q.dtype)
+            del s1
+            r1 = einsum('b i j, b j d -> b i d', s2, v)
+            del s2
+        else:
+            # q.shape[0] * q.shape[1] * slice_size >= 2**31 throws err
+            # needs around half of that slice_size to not generate noise
+            slice_size = math.floor(2**30 / (q.shape[0] * q.shape[1]))
+            for i in range(0, q.shape[1], slice_size):
+                end = i + slice_size
+                s1 = einsum('b i d, b j d -> b i j', q[:, i:end], k) * self.scale
+                s2 = s1.softmax(dim=-1, dtype=r1.dtype)
+                del s1  
+                r1[:, i:end] = einsum('b i j, b j d -> b i d', s2, v)
+                del s2
+        return r1
 
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q_in, k_in, v_in))
-        del q_in, k_in, v_in
+    # mps 16-32 GB (can be optimized)
+    def einsum_op_v2(self, q, k, v, r1):
+        slice_size = math.floor(2**30 / (q.shape[0] * q.shape[1]))
+        for i in range(0, q.shape[1], slice_size): # conservative/less mem: operation in steps
+            end = i + slice_size
+            s1 = einsum('b i d, b j d -> b i j', q[:, i:end], k) * self.scale
+            s2 = s1.softmax(dim=-1, dtype=r1.dtype)
+            del s1  
+            r1[:, i:end] = einsum('b i j, b j d -> b i d', s2, v)
+            del s2
+        return r1
 
-        r1 = torch.zeros(q.shape[0], q.shape[1], v.shape[2], device=q.device)
+    # mps 8 GB
+    def einsum_op_v3(self, q, k, v, r1):
+        slice_size = 1
+        for i in range(0, q.shape[0], slice_size): # iterate over q.shape[0]
+            end = min(q.shape[0], i + slice_size)
+            s1 = einsum('b i d, b j d -> b i j', q[i:end], k[i:end]) # adapted einsum for mem
+            s1 *= self.scale
+            s2 = s1.softmax(dim=-1, dtype=r1.dtype)
+            del s1
+            r1[i:end] = einsum('b i j, b j d -> b i d', s2, v[i:end]) # adapted einsum for mem
+            del s2
+        return r1
 
+    # cuda
+    def einsum_op_v4(self, q, k, v, r1):
         stats = torch.cuda.memory_stats(q.device)
         mem_active = stats['active_bytes.all.current']
         mem_reserved = stats['reserved_bytes.all.current']
@@ -195,33 +236,42 @@ class CrossAttention(nn.Module):
         mem_free_total = mem_free_cuda + mem_free_torch
 
         gb = 1024 ** 3
-        tensor_size = q.shape[0] * q.shape[1] * k.shape[1] * q.element_size()
-        modifier = 3 if q.element_size() == 2 else 2.5
-        mem_required = tensor_size * modifier
+        tensor_size = q.shape[0] * q.shape[1] * k.shape[1] * 4
+        mem_required = tensor_size * 2.5
         steps = 1
-
 
         if mem_required > mem_free_total:
             steps = 2**(math.ceil(math.log(mem_required / mem_free_total, 2)))
-            # print(f"Expected tensor size:{tensor_size/gb:0.1f}GB, cuda free:{mem_free_cuda/gb:0.1f}GB "
-            #      f"torch free:{mem_free_torch/gb:0.1f} total:{mem_free_total/gb:0.1f} steps:{steps}")
 
         if steps > 64:
             max_res = math.floor(math.sqrt(math.sqrt(mem_free_total / 2.5)) / 8) * 64
             raise RuntimeError(f'Not enough memory, use lower resolution (max approx. {max_res}x{max_res}). '
-                               f'Need: {mem_required/64/gb:0.1f}GB free, Have:{mem_free_total/gb:0.1f}GB free')
-
-        slice_size = q.shape[1] // steps if (q.shape[1] % steps) == 0 else q.shape[1]
+                            f'Need: {mem_required/64/gb:0.1f}GB free, Have:{mem_free_total/gb:0.1f}GB free')
+        
+        slice_size = q.shape[1] // steps if (q.shape[1] % steps) == 0 else q.shape[1]  
         for i in range(0, q.shape[1], slice_size):
-            end = i + slice_size
+            end = min(q.shape[1], i + slice_size)
             s1 = einsum('b i d, b j d -> b i j', q[:, i:end], k) * self.scale
-
-            s2 = s1.softmax(dim=-1, dtype=q.dtype)
+            s2 = s1.softmax(dim=-1, dtype=r1.dtype)
             del s1
-
             r1[:, i:end] = einsum('b i j, b j d -> b i d', s2, v)
-            del s2
+            del s2 
+        return r1
 
+    def forward(self, x, context=None, mask=None):
+        h = self.heads
+
+        q_in = self.to_q(x)
+        context = default(context, x)
+        k_in = self.to_k(context)
+        v_in = self.to_v(context)
+        device_type = 'mps' if x.device.type == 'mps' else 'cuda'
+        del context, x
+
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q_in, k_in, v_in))
+        del q_in, k_in, v_in
+        r1 = torch.zeros(q.shape[0], q.shape[1], v.shape[2], device=q.device, dtype=q.dtype)
+        r1 = self.einsum_op(q, k, v, r1)
         del q, k, v
 
         r2 = rearrange(r1, '(b h) n d -> b n (h d)', h=h)
@@ -233,146 +283,24 @@ class CrossAttention(nn.Module):
 class BasicTransformerBlock(nn.Module):
     def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=True):
         super().__init__()
-        AttentionBuilder = MemoryEfficientCrossAttention
-        self.attn1 = AttentionBuilder(query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout)  # is a self-attention
+        self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout)  # is a self-attention
         self.ff = FeedForward(dim, dropout=dropout, glu=gated_ff)
-        self.attn2 = AttentionBuilder(query_dim=dim, context_dim=context_dim,
-                                      heads=n_heads, dim_head=d_head, dropout=dropout)  # is self-attn if context is none
+        self.attn2 = CrossAttention(query_dim=dim, context_dim=context_dim,
+                                    heads=n_heads, dim_head=d_head, dropout=dropout)  # is self-attn if context is none
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
         self.norm3 = nn.LayerNorm(dim)
         self.checkpoint = checkpoint
 
-    def _set_attention_slice(self, slice_size):
-        self.attn1._slice_size = slice_size
-        self.attn2._slice_size = slice_size
+    def forward(self, x, context=None):
+        return checkpoint(self._forward, (x, context), self.parameters(), self.checkpoint)
 
-    def forward(self, hidden_states, context=None):
-        hidden_states = hidden_states.contiguous() if hidden_states.device.type == "mps" else hidden_states
-        hidden_states = self.attn1(self.norm1(hidden_states)) + hidden_states
-        hidden_states = self.attn2(self.norm2(hidden_states), context=context) + hidden_states
-        hidden_states = self.ff(self.norm3(hidden_states)) + hidden_states
-        return hidden_states
-
-        # def forward(self, x, context=None):
-        # return checkpoint(self._forward, (x, context), self.parameters(), self.checkpoint)
-
-    # def _forward(self, x, context=None):
-    # x = self.attn1(self.norm1(x)) + x
-    # x = self.attn2(self.norm2(x), context=context) + x
-    # x = self.ff(self.norm3(x)) + x
-    # return x
-
-class MemoryEfficientCrossAttention(nn.Module):
-    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0.0):
-        super().__init__()
-        inner_dim = dim_head * heads
-        context_dim = default(context_dim, query_dim)
-
-        self.scale = dim_head**-0.5
-        self.heads = heads
-        self.dim_head = dim_head
-
-        self.to_q = nn.Linear(query_dim, inner_dim, bias=False)
-        self.to_k = nn.Linear(context_dim, inner_dim, bias=False)
-        self.to_v = nn.Linear(context_dim, inner_dim, bias=False)
-
-        self.to_out = nn.Sequential(nn.Linear(inner_dim, query_dim), nn.Dropout(dropout))
-        self.attention_op: Optional[Any] = None
-
-    def _maybe_init(self, x):
-        """
-        Initialize the attention operator, if required We expect the head dimension to be exposed here, meaning that x
-        : B, Head, Length
-        """
-        if self.attention_op is not None:
-            return
-
-        _, M, K = x.shape
-        try:
-            self.attention_op = xformers.ops.AttentionOpDispatch(
-                dtype=x.dtype,
-                device=x.device,
-                k=K,
-                attn_bias_type=type(None),
-                has_dropout=False,
-                kv_len=M,
-                q_len=M,
-            ).op
-
-        except NotImplementedError as err:
-            raise NotImplementedError(f"Please install xformers with the flash attention / cutlass components.\n{err}")
-
-    def forward(self, x, context=None, mask=None):
-
-
-        q = self.to_q(x)
-        context = default(context, x)
-        k = self.to_k(context)
-        v = self.to_v(context)
-
-
-
-        b, _, _ = q.shape
-        q, k, v = map(
-            lambda t: t.unsqueeze(3)
-            .reshape(b, t.shape[1], self.heads, self.dim_head)
-            .permute(0, 2, 1, 3)
-            .reshape(b * self.heads, t.shape[1], self.dim_head)
-            .contiguous(),
-            (q, k, v),
-            )
-
-        # init the attention op, if required, using the proper dimensions
-        self._maybe_init(q)
-
-        # actually compute the attention, what we cannot get enough of
-        out = xformers.ops.memory_efficient_attention(q, k, v, attn_bias=None, op=self.attention_op)
-
-        # TODO: Use this directly in the attention operation, as a bias
-        if exists(mask):
-            raise NotImplementedError
-        out = (
-            out.unsqueeze(0)
-            .reshape(b, self.heads, out.shape[1], self.dim_head)
-            .permute(0, 2, 1, 3)
-            .reshape(b, out.shape[1], self.heads * self.dim_head)
-        )
-
-        stats = torch.cuda.memory_stats(q.device)
-        mem_active = stats['active_bytes.all.current']
-        mem_reserved = stats['reserved_bytes.all.current']
-        mem_free_cuda, _ = torch.cuda.mem_get_info(torch.cuda.current_device())
-        mem_free_torch = mem_reserved - mem_active
-        mem_free_total = mem_free_cuda + mem_free_torch
-
-        gb = 1024 ** 3
-        tensor_size = q.shape[0] * q.shape[1] * k.shape[1] * q.element_size()
-        modifier = 3 if q.element_size() == 2 else 2.5
-        mem_required = tensor_size * modifier
-        steps = 1
-
-
-        if mem_required > mem_free_total:
-            steps = 2**(math.ceil(math.log(mem_required / mem_free_total, 2)))
-            # print(f"Expected tensor size:{tensor_size/gb:0.1f}GB, cuda free:{mem_free_cuda/gb:0.1f}GB "
-            #      f"torch free:{mem_free_torch/gb:0.1f} total:{mem_free_total/gb:0.1f} steps:{steps}")
-
-        if steps > 64:
-            max_res = math.floor(math.sqrt(math.sqrt(mem_free_total / 2.5)) / 8) * 64
-            raise RuntimeError(f'Not enough memory, use lower resolution (max approx. {max_res}x{max_res}). '
-                               f'Need: {mem_required/64/gb:0.1f}GB free, Have:{mem_free_total/gb:0.1f}GB free')
-
-
-
-
-
-        return self.to_out(out)
-
-
-
-
-
+    def _forward(self, x, context=None):
+        x = x.contiguous() if x.device.type == 'mps' else x
+        x = self.attn1(self.norm1(x)) + x
+        x = self.attn2(self.norm2(x), context=context) + x
+        x = self.ff(self.norm3(x)) + x
+        return x
 
 
 class SpatialTransformer(nn.Module):
@@ -398,7 +326,7 @@ class SpatialTransformer(nn.Module):
 
         self.transformer_blocks = nn.ModuleList(
             [BasicTransformerBlock(inner_dim, n_heads, d_head, dropout=dropout, context_dim=context_dim)
-             for d in range(depth)]
+                for d in range(depth)]
         )
 
         self.proj_out = zero_module(nn.Conv2d(inner_dim,

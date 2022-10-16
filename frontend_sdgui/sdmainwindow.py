@@ -1,11 +1,11 @@
 import pandas as pd
 from PySide6.examples.webenginewidgets.markdowneditor.ui_mainwindow import Ui_MainWindow
 
-import backend.settings as settings
-from backend.singleton import singleton
+import sdgui.settings_sd as settings
+from sdgui.sdsingleton import sdsingleton
 settings.load_settings_json()
 
-gs = singleton
+gs = sdsingleton
 
 import random
 import time, os, sys
@@ -24,13 +24,13 @@ import transformers
 from transformers import CLIPTokenizer, CLIPTextModel
 from transformers import BertTokenizerFast
 
-import backend.settings as settings
+import sdgui.settings_sd as settings
 
-from backend.deforum.deforum_simplified import DeforumGenerator
-from backend.ui_func import getLatestGeneratedImagesFromPath
-from backend.worker import Worker
+from sdgui.deforum.deforum_simplified import DeforumGenerator
+from sdgui.ui_func import getLatestGeneratedImagesFromPath
+from sdgui.worker import Worker
 
-from frontend.ui_classes import *
+from frontend_sdgui.ui_classes import *
 from ldm.generate import Generate
 
 from PySide6.QtCore import *
@@ -87,7 +87,7 @@ class Callbacks(QObject):
 
 class GenerateWindow(QObject):
     loader = QtUiTools.QUiLoader()
-    file = QtCore.QFile("frontend/main/main_window.ui")
+    file = QtCore.QFile("frontend_sdgui/main/main_window.ui")
     file.open(QtCore.QFile.ReadOnly)
     w = loader.load(file)
     file.close()
@@ -253,6 +253,16 @@ class GenerateWindow(QObject):
         self.vpainter["iins"] = QPainter()
         self.tpixmap = QPixmap(512, 512)
 
+        self.progress = 0.0
+        self.update = 0
+        self.steps=self.w.sizer_count.w.stepsSlider.value()
+
+        self.updateRate = self.w.sizer_count.w.previewSlider.value()
+        self.currentFrames = []
+        self.renderedFrames = 0
+        self.now = 0
+        self.onePercent = 1
+
         self.setup_defaults()
 
 
@@ -298,16 +308,10 @@ class GenerateWindow(QObject):
         self.timeline.timeline.duration = self.animDials.w.frames.value()
         self.timeline.timeline.update()
     def updateThumbsZoom(self):
-        while gs.callbackBusy == True:
-            time.sleep(0.1)
-        try:
-            if gs.callbackBusy == False:
-                size = self.w.thumbnails.thumbsZoom.value()
-                self.w.thumbnails.thumbs.setGridSize(QSize(size, size))
-                self.w.thumbnails.thumbs.setIconSize(QSize(size, size))
-        except Exception as e:
-            print(f"Exception: {e}")
-            pass
+
+        size = self.w.thumbnails.thumbsZoom.value()
+        self.w.thumbnails.thumbs.setGridSize(QSize(size, size))
+        self.w.thumbnails.thumbs.setIconSize(QSize(size, size))
     def update_scaleNumber(self):
         float = self.w.sizer_count.w.scaleSlider.value() / 100
         self.w.sizer_count.w.scaleNumber.display(str(float))
@@ -401,7 +405,11 @@ class GenerateWindow(QObject):
             self.txt2img_thread()
 
     def run_deforum(self, progress_callback=None):
+        self.progress = 0.0
+        self.update = 0
+        self.steps=self.w.sizer_count.w.stepsSlider.value()
 
+        self.updateRate = self.w.sizer_count.w.previewSlider.value()
         self.currentFrames = []
         self.renderedFrames = 0
         self.now = 0
@@ -466,12 +474,24 @@ class GenerateWindow(QObject):
 
         #print(prompt_series)
         show_sample_per_step = True
-        self.progress = 0.0
-        self.update = 0
-        self.steps=self.w.sizer_count.w.stepsSlider.value()
-
         self.onePercent = 100 / (1 * self.steps * max_frames * max_frames)
-        self.updateRate = self.w.sizer_count.w.previewSlider.value()
+        sampler=self.w.sampler.w.comboBox.currentText()
+
+        if sampler == "k_lms":
+            sampler = "klms"
+        elif sampler == "k_dpm_2":
+            sampler = "dpm2"
+        elif sampler == "k_dpm_2_a":
+            sampler = "dpm2_ancestral"
+        elif sampler == "k_heun":
+            sampler = "heun"
+        elif sampler == "k_euler":
+            sampler = "euler"
+        elif sampler == "k_euler_a":
+            sampler = "euler_ancestral"
+        else:
+            sampler = sampler
+
         self.deforum.render_animation(  animation_prompts=prompt_series,
                                         steps=self.steps,
                                         adabins = adabins,
@@ -510,10 +530,10 @@ class GenerateWindow(QObject):
                                         contrast_schedule = contrast_schedule,
                                         diffusion_cadence=cadence,
                                         shouldStop=False,
+                                        sampler=sampler,
 
                                         )
         self.stop_painters()
-        #self.w.thumbnails.setUpdatesEnabled(True)
         self.signals.reenable_runbutton.emit()
 
     def deforumTest(self, *args, **kwargs):
@@ -698,11 +718,49 @@ class GenerateWindow(QObject):
                     row[0].save(output)
                     self.image_path = output
                     self.signals.deforum_image_cb.emit()
+                    self.twopass = True
+                    if self.twopass:
+                        self.height = 1024
+                        self.gr = None
+                        self.gr = Generate()
+                        results = self.gr.prompt2image(prompt   = prompt,
+                                                       outdir   = outdir,
+                                                       init_img = output,
+                                                       fit      = False,
+                                                       cfg_scale = scale,
+                                                       width  = width,
+                                                       height = self.height,
+                                                       iterations = samples,
+                                                       steps = self.steps,
+                                                       seamless = seamless,
+                                                       sampler_name = sampler,
+                                                       seed = seed,
+                                                       upscale = upscale,
+                                                       gfpgan_strength = gfpgan_strength,
+                                                       strength = 0.8,
+                                                       full_precision = full_precision,
+                                                       step_callback=self.deforumstepCallback_signal,
+                                                       image_callback=self.imageCallback_signal)
+                        for row in results:
+                            #print(f'filename={row[0]}')
+                            #print(f'seed    ={row[1]}')
+                            filename = random.randint(10000, 99999)
+                            output = f'outputs/{filename}.png'
+                            row[0].save(output)
+                            self.image_path = output
+                            self.signals.deforum_image_cb.emit()
+
+
+
                     #print("We did set the image")
                     #
                     #self.get_pic(clear=False)
         self.signals.reenable_runbutton.emit()
         #self.stop_painters()
+
+
+
+
     @Slot()
     def reenableRunButton(self):
         try:
@@ -714,7 +772,6 @@ class GenerateWindow(QObject):
         except:
             pass
     def deforum_thread(self):
-        #self.w.thumbnails.setUpdatesEnabled(False)
 
         self.w.prompt.w.runButton.setEnabled(False)
         QTimer.singleShot(100, lambda: self.pass_object())
@@ -788,9 +845,9 @@ class GenerateWindow(QObject):
 
         # this will download requirements for Kornia
         print('preloading Kornia requirements (ignore the deprecation warnings)...')
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', category=DeprecationWarning)
-            import kornia
+        #with warnings.catch_warnings():
+        #    warnings.filterwarnings('ignore', category=DeprecationWarning)
+        import kornia
         print('...success')
 
         version = 'openai/clip-vit-large-patch14'
@@ -816,7 +873,6 @@ class GenerateWindow(QObject):
             print(f"Exception: {e}")
             pass
     def txt2img_thread(self):
-        self.w.thumbnails.setUpdatesEnabled(False)
         #self.run_txt2img()
         # Pass the function to execute
         worker = Worker(self.run_txt2img)

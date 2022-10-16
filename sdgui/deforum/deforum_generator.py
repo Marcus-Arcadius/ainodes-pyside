@@ -4,7 +4,7 @@ import subprocess
 
 import os
 
-from backend.singleton import singleton as gs
+from sdgui.sdsingleton import sdsingleton as gs
 
 """setup_environment = True #@param {type:"boolean"}
 print_subprocess = False #@param {type:"boolean"}
@@ -70,7 +70,7 @@ sys.path.extend([
 
 import py3d_tools as p3d
 
-from backend.deforum import DepthModel, sampler_fn
+from sdgui.deforum import DepthModel, sampler_fn
 from k_diffusion.external import CompVisDenoiser
 from ldm.util import instantiate_from_config
 from ldm.models.diffusion.ddim import DDIMSampler

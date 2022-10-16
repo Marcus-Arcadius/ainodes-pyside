@@ -1,9 +1,9 @@
 import traceback, sys, os
 
 from PySide6.QtCore import QRunnable, Signal, QObject, Slot
-from backend.singleton import singleton
+from sdgui.sdsingleton import sdsingleton
 
-gs = singleton
+gs = sdsingleton
 
 
 class WorkerSignals(QObject):

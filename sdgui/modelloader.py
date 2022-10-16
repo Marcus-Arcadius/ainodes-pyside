@@ -7,9 +7,9 @@ import torch
 #from backend.helpers import DepthModel
 from ldm.util import instantiate_from_config
 
-from backend.singleton import singleton
+from sdgui.sdsingleton import sdsingleton
 
-gs = singleton
+gs = sdsingleton
 gs.models = {}
 
 

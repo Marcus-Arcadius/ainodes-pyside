@@ -27,8 +27,8 @@ from ldm.dream.pngwriter           import PngWriter
 from ldm.dream.image_util          import InitImageResizer
 from ldm.dream.devices             import choose_torch_device
 from ldm.dream.conditioning        import get_uc_and_c
-from backend.singleton import singleton
-gs = singleton
+from sdgui.sdsingleton import sdsingleton
+gs = sdsingleton
 
 #from backend import singleton as gs
 import torch, gc
@@ -269,8 +269,8 @@ class Generate():
         """
         # TODO: convert this into a getattr() loop
         steps                 = steps      or self.steps
-        width                 = width      or self.width
-        height                = height     or self.height
+        width                 = width
+        height                = height
         seamless              = seamless   or self.seamless
         cfg_scale             = cfg_scale  or self.cfg_scale
         ddim_eta              = ddim_eta   or self.ddim_eta

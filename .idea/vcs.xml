@@ -4,6 +4,8 @@
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/src/AdaBins" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/src/MiDaS" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/src/clip" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/src/pytorch3d-lite" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/src/taming-transformers" vcs="Git" />
   </component>
 </project>

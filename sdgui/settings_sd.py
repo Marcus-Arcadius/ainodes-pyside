@@ -1,8 +1,8 @@
 import json
 from types import SimpleNamespace
-from backend.singleton import singleton
+from sdgui.sdsingleton import sdsingleton
 
-gs = singleton
+gs = sdsingleton
 
 
 def load_settings_json():

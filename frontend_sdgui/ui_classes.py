@@ -21,71 +21,71 @@ class AnimKeyEditor(QObject):
 
     def __init__(self, *args, **kwargs):
         loader = QtUiTools.QUiLoader()
-        file = QFile("frontend/ui_widgets/keyframe_editor.ui")
+        file = QFile("frontend_sdgui/ui_widgets/keyframe_editor.ui")
         file.open(QFile.ReadOnly)
         self.w = loader.load(file)
         file.close()
         #super().__init__(*args, **kwargs)
-        #uic.loadUi("frontend/ui_widgets/sizer_count.ui", self)
+        #uic.loadUi("frontend_sdgui/ui_widgets/sizer_count.ui", self)
 
 class AnimKeys(QObject):
 
     def __init__(self, *args, **kwargs):
         loader = QtUiTools.QUiLoader()
-        file = QFile("frontend/ui_widgets/animKeys.ui")
+        file = QFile("frontend_sdgui/ui_widgets/animKeys.ui")
         file.open(QFile.ReadOnly)
         self.w = loader.load(file)
         file.close()
         #super().__init__(*args, **kwargs)
-        #uic.loadUi("frontend/ui_widgets/sizer_count.ui", self)
+        #uic.loadUi("frontend_sdgui/ui_widgets/sizer_count.ui", self)
 
 
 class AnimDials(QObject):
 
     def __init__(self, *args, **kwargs):
         loader = QtUiTools.QUiLoader()
-        file = QFile("frontend/ui_widgets/animDials.ui")
+        file = QFile("frontend_sdgui/ui_widgets/animDials.ui")
         file.open(QFile.ReadOnly)
         self.w = loader.load(file)
         file.close()
         #super().__init__(*args, **kwargs)
-        #uic.loadUi("frontend/ui_widgets/sizer_count.ui", self)
+        #uic.loadUi("frontend_sdgui/ui_widgets/sizer_count.ui", self)
 
 
 class SizerCount(QObject):
 
     def __init__(self, *args, **kwargs):
         loader = QtUiTools.QUiLoader()
-        file = QFile("frontend/ui_widgets/sizer_count.ui")
+        file = QFile("frontend_sdgui/ui_widgets/sizer_count.ui")
         file.open(QFile.ReadOnly)
         self.w = loader.load(file)
         file.close()
         #super().__init__(*args, **kwargs)
-        #uic.loadUi("frontend/ui_widgets/sizer_count.ui", self)
+        #uic.loadUi("frontend_sdgui/ui_widgets/sizer_count.ui", self)
 class Dynaimage(QObject):
     def __init__(self, *args, **kwargs):
         #super().__init__(*args, **kwargs)
-        #uic.loadUi("frontend/ui_widgets/sampler.ui", self)
+        #uic.loadUi("frontend_sdgui/ui_widgets/sampler.ui", self)
         loader = QtUiTools.QUiLoader()
-        file = QFile("frontend/ui_widgets/dynaimage.ui")
+        file = QFile("frontend_sdgui/ui_widgets/dynaimage.ui")
         file.open(QFile.ReadOnly)
         self.w = loader.load(file)
         file.close()
 class Dynaview(QObject):
     def __init__(self, *args, **kwargs):
         #super().__init__(*args, **kwargs)
-        #uic.loadUi("frontend/ui_widgets/sampler.ui", self)
+        #uic.loadUi("frontend_sdgui/ui_widgets/sampler.ui", self)
         loader = QtUiTools.QUiLoader()
-        file = QFile("frontend/ui_widgets/dynaview.ui")
+        file = QFile("frontend_sdgui/ui_widgets/dynaview.ui")
         file.open(QFile.ReadOnly)
         self.w = loader.load(file)
         file.close()
 class Sampler(QObject):
     def __init__(self, *args, **kwargs):
         #super().__init__(*args, **kwargs)
-        #uic.loadUi("frontend/ui_widgets/sampler.ui", self)
+        #uic.loadUi("frontend_sdgui/ui_widgets/sampler.ui", self)
         loader = QtUiTools.QUiLoader()
-        file = QFile("frontend/ui_widgets/sampler.ui")
+        file = QFile("frontend_sdgui/ui_widgets/sampler.ui")
         file.open(QFile.ReadOnly)
         self.w = loader.load(file)
         file.close()
@@ -93,18 +93,18 @@ class Sampler(QObject):
 class Prompt(QObject):
     def __init__(self, *args, **kwargs):
         #super().__init__(*args, **kwargs)
-        #uic.loadUi("frontend/ui_widgets/prompt.ui", self)
+        #uic.loadUi("frontend_sdgui/ui_widgets/prompt.ui", self)
         loader = QtUiTools.QUiLoader()
-        file = QFile("frontend/ui_widgets/prompt.ui")
+        file = QFile("frontend_sdgui/ui_widgets/prompt.ui")
         file.open(QFile.ReadOnly)
         self.w = loader.load(file)
         file.close()
 class Anim(QObject):
     def __init__(self, *args, **kwargs):
         #super().__init__(*args, **kwargs)
-        #uic.loadUi("frontend/ui_widgets/anim.ui", self)
+        #uic.loadUi("frontend_sdgui/ui_widgets/anim.ui", self)
         loader = QtUiTools.QUiLoader()
-        file = QFile("frontend/ui_widgets/anim.ui")
+        file = QFile("frontend_sdgui/ui_widgets/anim.ui")
         file.open(QFile.ReadOnly)
         self.w = loader.load(file)
         file.close()
@@ -186,13 +186,13 @@ class PhotoViewer(QGraphicsView):
 
 class Preview(QObject):
     loader = QtUiTools.QUiLoader()
-    file = QFile("frontend/ui_widgets/preview.ui")
+    file = QFile("frontend_sdgui/ui_widgets/preview.ui")
     file.open(QFile.ReadOnly)
     w = loader.load(file)
     file.close()
     def __init__(self, *args, **kwargs):
         #super().__init__(*args, **kwargs)
-        #uic.loadUi("frontend/ui_widgets/preview.ui", self)
+        #uic.loadUi("frontend_sdgui/ui_widgets/preview.ui", self)
 
         self._zoom = 0
 

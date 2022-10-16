@@ -1,5 +1,5 @@
-from frontend.example_calculator.calc_conf import register_node, OP_NODE_ADD, OP_NODE_SUB, OP_NODE_MUL, OP_NODE_DIV
-from frontend.example_calculator.calc_node_base import CalcNode
+from frontend_sdgui.example_calculator.calc_conf import register_node, OP_NODE_ADD, OP_NODE_SUB, OP_NODE_MUL, OP_NODE_DIV
+from frontend_sdgui.example_calculator.calc_node_base import CalcNode
 
 
 @register_node(OP_NODE_ADD)

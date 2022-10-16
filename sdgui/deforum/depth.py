@@ -11,8 +11,8 @@ from PIL import Image
 from infer import InferenceHelper
 from midas.dpt_depth import DPTDepthModel
 from midas.transforms import Resize, NormalizeImage, PrepareForNet
-from backend.singleton import singleton
-gs = singleton
+from sdgui.sdsingleton import sdsingleton
+gs = sdsingleton
 
 def wget(url, outputdir):
     print(subprocess.run(['wget', url, '-P', outputdir], stdout=subprocess.PIPE).stdout.decode('utf-8'))

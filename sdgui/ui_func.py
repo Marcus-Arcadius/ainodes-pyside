@@ -1,7 +1,7 @@
 import os
 
-from backend.singleton import singleton
-gs = singleton
+from sdgui.sdsingleton import sdsingleton
+gs = sdsingleton
 
 
 

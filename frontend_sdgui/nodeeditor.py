@@ -5,8 +5,8 @@ from PySide6.QtGui import QIcon, Qt, QAction
 from PySide6.QtWidgets import QMdiArea, QFileDialog, QMessageBox, QDockWidget
 
 from nodeeditor.node_editor_window import NodeEditorWindow
-from frontend.example_calculator.calc_sub_window import CalculatorSubWindow
-from frontend.example_calculator.calc_drag_listbox import QDMDragListbox
+from frontend_sdgui.example_calculator.calc_sub_window import CalculatorSubWindow
+from frontend_sdgui.example_calculator.calc_drag_listbox import QDMDragListbox
 from nodeeditor.utils import dumpException
 
 # Enabling edge validators

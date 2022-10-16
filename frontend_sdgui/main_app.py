@@ -15,7 +15,7 @@ from PySide6.QtCore import QCoreApplication, Qt
 QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
 app = QApplication(sys.argv)
 
-from frontend.mainwindow import *
+from frontend_sdgui.sdmainwindow import *
 
 #from ui_classes import *
 
@@ -45,13 +45,13 @@ if __name__ == "__main__":
 
 
 
-    pixmap = QPixmap('frontend/main/splash_2.png')
+    pixmap = QPixmap('frontend_sdgui/main/splash_2.png')
     splash = QSplashScreen(pixmap)
     splash.show()
     icon = QIcon('frontend/main/splash_2.png')
 
 
-    sshFile="frontend/style/QTDark.stylesheet"
+    sshFile="frontend_sdgui/style/QTDark.stylesheet"
 
     #with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
 
@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
 
     mainWindow.w.setWindowTitle("aiNodes")
-    mainWindow.w.setWindowIcon(QIcon('frontend/main/splash_2.png'))
+    mainWindow.w.setWindowIcon(QIcon('frontend_sdgui/main/splash_2.png'))
     with open(sshFile,"r") as fh:
         mainWindow.w.setStyleSheet(fh.read())
     #app.setIcon(QIcon('frontend/main/splash.png'))
@@ -87,5 +87,5 @@ if __name__ == "__main__":
     mainWindow.w.preview.w.zoomOutButton.clicked.connect(mainWindow.zoom_OUT)
     #mainWindow.timeline.timeline.start()
     #mainWindow.deforum_thread()
-
+    mainWindow.prepare_loading()
     sys.exit(app.exec())

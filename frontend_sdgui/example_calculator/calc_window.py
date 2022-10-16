@@ -5,10 +5,10 @@ from PySide6.QtCore import Qt, QSignalMapper
 
 from nodeeditor.utils import loadStylesheets
 from nodeeditor.node_editor_window import NodeEditorWindow
-from frontend.example_calculator.calc_sub_window import CalculatorSubWindow
-from frontend.example_calculator.calc_drag_listbox import QDMDragListbox
+from frontend_sdgui.example_calculator.calc_sub_window import CalculatorSubWindow
+from frontend_sdgui.example_calculator.calc_drag_listbox import QDMDragListbox
 from nodeeditor.utils import dumpException, pp
-from frontend.example_calculator.calc_conf import CALC_NODES
+from frontend_sdgui.example_calculator.calc_conf import CALC_NODES
 
 # Enabling edge validators
 from nodeeditor.node_edge import Edge
@@ -23,7 +23,7 @@ Edge.registerEdgeValidator(edge_cannot_connect_input_and_output_of_same_node)
 
 
 # images for the dark skin
-import frontend.example_calculator.qss.nodeeditor_dark_resources
+import frontend_sdgui.example_calculator.qss.nodeeditor_dark_resources
 
 
 DEBUG = False

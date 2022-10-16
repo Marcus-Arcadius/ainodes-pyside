@@ -19,9 +19,9 @@ from pytorch_lightning import seed_everything
 from scipy.ndimage import gaussian_filter
 from torch import autocast
 
-from backend.deforum import DepthModel, sampler_fn
+from sdgui.deforum import DepthModel, sampler_fn
 
-from backend.deforum.deforum_generator import prepare_mask, get_uc_and_c, DeformAnimKeys, sample_from_cv2, \
+from sdgui.deforum.deforum_generator import prepare_mask, get_uc_and_c, DeformAnimKeys, sample_from_cv2, \
     sample_to_cv2, anim_frame_warp_2d, anim_frame_warp_3d, maintain_colors, add_noise, next_seed, \
     load_img, get_inbetweens, parse_key_frames, check_is_number
 from ldm.dream.devices import choose_torch_device
@@ -42,8 +42,8 @@ import gc
 from k_diffusion.external import CompVisDenoiser
 from k_diffusion import sampling
 from torch import nn
-from backend.singleton import singleton
-gs = singleton
+from sdgui.sdsingleton import sdsingleton
+gs = sdsingleton
 from ldm.util import instantiate_from_config
 
 
@@ -644,6 +644,7 @@ class DeforumGenerator():
         self.show_sample_per_step = show_sample_per_step
         self.diffusion_cadence = diffusion_cadence
         self.outdir = f"{outdir}/{batch_name}_{random.randint(1111, 9999)}"
+        self.sampler=sampler
 
         near_plane = near_plane
         far_plane = far_plane

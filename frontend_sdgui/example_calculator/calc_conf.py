@@ -38,4 +38,4 @@ def get_class_from_opcode(op_code):
 
 
 # import all nodes and register them
-from frontend.example_calculator.nodes import *
+from frontend_sdgui.example_calculator.nodes import *
