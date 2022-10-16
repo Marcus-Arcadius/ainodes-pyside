@@ -506,11 +506,11 @@ class GenerateWindow(QObject):
                                         midas_weight = midas_weight,
                                         near_plane = near_plane,
                                         far_plane = far_plane,
-                                        image_callback=self.imageCallback_signal,
+                                        image_callback=self.imageCallback_signal if self.w.sampler.w.image_cb.isChecked() else None,
                                         use_init = use_init,
                                         clear_latent = clearLatent,
                                         clear_sample = clearSample,
-                                        step_callback = self.deforumstepCallback_signal,
+                                        step_callback = self.deforumstepCallback_signal if self.w.sampler.w.step_cb.isChecked() else None,
                                         show_sample_per_step=show_sample_per_step,
                                         angle = angle,
                                         zoom = zoom,
@@ -708,7 +708,7 @@ class GenerateWindow(QObject):
                                                gfpgan_strength = gfpgan_strength,
                                                strength = 0.0,
                                                full_precision = full_precision,
-                                               step_callback=self.deforumstepCallback_signal,
+                                               step_callback=self.deforumstepCallback_signal if self.w.sampler.w.step_cb.isChecked() else None,
                                                image_callback=self.imageCallback_signal)
                 for row in results:
                     #print(f'filename={row[0]}')

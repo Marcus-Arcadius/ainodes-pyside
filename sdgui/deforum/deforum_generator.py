@@ -701,7 +701,7 @@ def generate(args, frame = 0, return_latent=False, return_sample=False, return_c
     k_sigmas = k_sigmas[len(k_sigmas)-t_enc-1:]
 
     if args.sampler in ['plms','ddim']:
-        sampler.make_schedule(ddim_num_steps=args.steps, ddim_eta=args.ddim_eta, ddim_discretize='fill', verbose=False)
+        sampler.make_schedule(ddim_num_steps=args.steps, ddim_eta=args.ddim_eta, ddim_discretize='quad', verbose=False)
 
     callback = SamplerCallback(args=args,
                                mask=mask,

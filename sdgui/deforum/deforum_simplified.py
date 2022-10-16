@@ -973,7 +973,7 @@ class DeforumGenerator():
         k_sigmas = k_sigmas[len(k_sigmas)-self.t_enc-1:]
     
         if self.sampler in ['plms','ddim']:
-            sampler.make_schedule(ddim_num_steps=self.steps, ddim_eta=self.ddim_eta, ddim_discretize='fill', verbose=False)
+            sampler.make_schedule(ddim_num_steps=self.steps, ddim_eta=self.ddim_eta, ddim_discretize='quad', verbose=False)
 
         callback = SamplerCallback( n_samples=self.n_samples,
                                     save_sample_per_step=self.save_sample_per_step,
