@@ -38,42 +38,26 @@ from PySide6.QtCore import *
 class Keyframes(object):
     def __init__(self):
         self.keyframes = {}
+        self.tempList = {}
         super().__init__()
 
     def addKeyframe(self, timePosition, valueType, value):
         if valueType not in self.keyframes:
             self.keyframes[valueType] = {}
-
         if timePosition is not None:
-            self.tempList = {}
-
-            self.keyframes[valueType][timePosition] = {}
-            self.keyframes[valueType][timePosition]["keyframe"] = value
-            #print(type(self.keyframes))
-            #print(type(self.keyframes[valueType]))
-            #print(type(self.keyframes[valueType][str(timePosition)]))
-            #print(type(self.keyframes[valueType][str(timePosition)]["keyframe"]))
-
+            #print(valueType)
+            #print(timePosition)
+            #print(value)
+            self.keyframes[valueType][timePosition] = value
         if self.keyframes[valueType] != {}:
+            print(type(self.keyframes[valueType][timePosition]))
             self.keyframes[valueType] = dict(sorted(self.keyframes[valueType].items()))
-
-        var = 0
         for key, value in self.keyframes[valueType].items():
-
-                tup = (key, value)
-                self.tempList[var] = tup
-                var += 1
-                print(self.tempList)
-
-            #print(self.keyframes[valueType][i])\
-        #print(self.tempList)
-        for keys in self.tempList.items():
-            print(keys)
-            print(keys[0])
-            print(keys[1])
-            print(keys[1][1]['keyframe'])
-
-        #print(self.keyframes[valueType])
+                #print(key)
+                #print(value)
+                self.tempList[key] = value
+        self.tempList = dict(sorted(self.tempList.items()))
+        print(self.tempList)
 
 
 
@@ -709,7 +693,7 @@ class GenerateWindow(QObject):
                                                strength = 0.0,
                                                full_precision = full_precision,
                                                step_callback=self.deforumstepCallback_signal if self.w.sampler.w.step_cb.isChecked() else None,
-                                               image_callback=self.imageCallback_signal)
+                                               image_callback=self.imageCallback_signal if self.w.sampler.w.image_cb.isChecked() else None)
                 for row in results:
                     #print(f'filename={row[0]}')
                     #print(f'seed    ={row[1]}')
@@ -718,11 +702,9 @@ class GenerateWindow(QObject):
                     row[0].save(output)
                     self.image_path = output
                     self.signals.deforum_image_cb.emit()
-                    self.twopass = True
+                    self.twopass = True if self.w.sampler.w.twoPass.isChecked() else False
                     if self.twopass:
                         self.height = 1024
-                        self.gr = None
-                        self.gr = Generate()
                         results = self.gr.prompt2image(prompt   = prompt,
                                                        outdir   = outdir,
                                                        init_img = output,
@@ -739,8 +721,8 @@ class GenerateWindow(QObject):
                                                        gfpgan_strength = gfpgan_strength,
                                                        strength = 0.8,
                                                        full_precision = full_precision,
-                                                       step_callback=self.deforumstepCallback_signal,
-                                                       image_callback=self.imageCallback_signal)
+                                                       step_callback=self.deforumstepCallback_signal if self.w.sampler.w.step_cb.isChecked() else None,
+                                                       image_callback=self.imageCallback_signal if self.w.sampler.w.image_cb.isChecked() else None)
                         for row in results:
                             #print(f'filename={row[0]}')
                             #print(f'seed    ={row[1]}')

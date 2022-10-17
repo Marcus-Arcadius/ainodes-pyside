@@ -503,16 +503,15 @@ class OurTimeline(QWidget):
             poly = QPolygon([QPoint(-10, 20), QPoint(10, 20), QPoint(0, 40)])
 
 
-        """for keys in self.keyFrameList:
-            for start in self.keyFrameList[keys].items():
-                if start is not None:
-                    kfbrush = QBrush(Qt.darkRed)
-                    kfStartPoint = int(start) / self.getScale()
-                    scaleMod = 5
-                    kfPoly = QPolygon([QPoint(kfStartPoint - scaleMod, 50), QPoint(kfStartPoint, 45), QPoint(kfStartPoint + scaleMod, 50), QPoint(kfStartPoint, 55)])
-                    qp.setPen(Qt.darkRed)
-                    qp.setBrush(kfbrush)
-                    qp.drawPolygon(kfPoly)"""
+        for key, value in self.keyFrameList.items():
+            if key is not None:
+                kfbrush = QBrush(Qt.darkRed)
+                kfStartPoint = int(key) / self.getScale()
+                scaleMod = 5
+                kfPoly = QPolygon([QPoint(kfStartPoint - scaleMod, 50), QPoint(kfStartPoint, 45), QPoint(kfStartPoint + scaleMod, 50), QPoint(kfStartPoint, 55)])
+                qp.setPen(Qt.darkRed)
+                qp.setBrush(kfbrush)
+                qp.drawPolygon(kfPoly)
 
         # Draw samples
         t = 0
